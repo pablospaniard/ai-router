@@ -23,7 +23,9 @@ export interface ModelProfile {
 export interface ProviderConfig {
   command: string;
   args?: string[];
-  permissionMode?: "acceptEdits" | "auto" | "manual" | "dontAsk" | "plan";
+  /** Optional override used when the provider CLI's default model cannot be detected. */
+  defaultModel?: string;
+  permissionMode?: "acceptEdits" | "auto" | "bypassPermissions" | "manual" | "dontAsk" | "plan";
   allowedModels?: string[];
   models: Record<ModelTier, ModelProfile>;
 }
@@ -99,6 +101,7 @@ export interface HistoryRecord {
   exitCode: number;
   durationMs: number;
   outputExcerpt?: string;
+  usage?: TokenUsage;
   feedback?: FeedbackRating;
   feedbackNote?: string;
 }
@@ -119,6 +122,7 @@ export interface PhaseExecution {
   exitCode: number;
   durationMs: number;
   output: string;
+  usage?: TokenUsage;
   historyId?: string;
 }
 
@@ -126,6 +130,17 @@ export interface AgentRunResult {
   exitCode: number;
   output: string;
   question?: string;
+  usage?: TokenUsage;
+}
+
+export interface TokenUsage {
+  /** Input tokens that were not served from a provider cache. */
+  uncachedInputTokens: number;
+  cachedInputTokens: number;
+  /** Tokens written into a provider cache, when reported separately. */
+  cacheWriteInputTokens: number;
+  outputTokens: number;
+  reasoningOutputTokens: number;
 }
 
 export interface SessionTurn {

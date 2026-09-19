@@ -33,7 +33,8 @@
   "scripts": {
     "build": "tsc && chmod +x dist/cli.js",
     "dev": "tsx src/cli.ts",
-    "test": "npm run build && node --test dist/test/*.test.js",
+    "test": "npm run test:coverage",
+    "test:coverage": "npm run build && node --test --experimental-test-coverage --test-coverage-exclude=dist/test/** --test-coverage-lines=95 --test-coverage-functions=95 dist/test/*.test.js",
     "start": "node dist/cli.js",
     "prepare": "npm run build"
   },

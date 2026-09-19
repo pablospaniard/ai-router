@@ -1,4 +1,5 @@
-const enabled = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
+const interactive = Boolean(process.stdout.isTTY);
+const enabled = interactive && !process.env.NO_COLOR;
 const wrap = (open: string, close: string, value: string) => enabled ? `${open}${value}${close}` : value;
 
 export const ui = {
@@ -31,13 +32,127 @@ export function divider(title?: string): string {
 }
 export function sectionRule(title: string, width = 68): string {
   const label = ` ${title} `;
-  return ui.gray(`──${label}${"─".repeat(Math.max(0, width - label.length - 2))}`);
+  return ui.gray(`──${label}${"─".repeat(Math.max(0, width - visibleLength(label) - 2))}`);
 }
 export function promptLabel(): string { return `${ui.green("❯")} `; }
 export function command(s: string): string { return ui.bold(ui.cyan(s)); }
 
-function plainText(value: string): string { return value.replace(/\x1b\[[0-9;]*m/g, ""); }
-function visibleLength(value: string): number { return plainText(value).length; }
+export function plainText(value: string): string { return value.replace(/\x1b\[[0-9;]*m/g, ""); }
+export function visibleLength(value: string): number { return plainText(value).length; }
+
+export function outputWidth(): number {
+  return Math.max(24, Math.min(100, process.stdout.columns || 80));
+}
+
+function styleWords(value: string, style: (word: string) => string): string {
+  return value.split(/(\s+)/).map(part => /\s+/.test(part) ? part : style(part)).join("");
+}
+
+function inlineMarkdown(value: string): string {
+  return value.replace(/(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))/g, token => {
+    if (token.startsWith("`")) return styleWords(token.slice(1, -1), ui.cyan);
+    if (token.startsWith("**")) return styleWords(token.slice(2, -2), ui.bold);
+    const link = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    return link ? `${ui.cyan(link[1])} ${ui.gray(`(${link[2]})`)}` : token;
+  });
+}
+
+function wrapped(value: string, firstPrefix: string, nextPrefix: string, width: number): string[] {
+  const words = inlineMarkdown(value.trim()).split(/\s+/).filter(Boolean);
+  if (!words.length) return [firstPrefix.trimEnd()];
+  const lines: string[] = [];
+  let prefix = firstPrefix;
+  let line = prefix;
+  for (const word of words) {
+    const spacer = visibleLength(line) > visibleLength(prefix) ? " " : "";
+    if (spacer && visibleLength(line) + 1 + visibleLength(word) > width) {
+      lines.push(line);
+      prefix = nextPrefix;
+      line = `${prefix}${word}`;
+    } else {
+      line += `${spacer}${word}`;
+    }
+  }
+  lines.push(line);
+  return lines;
+}
+
+export interface MarkdownRenderOptions {
+  width?: number;
+  rich?: boolean;
+}
+
+/** Render common Markdown as readable terminal text without changing persisted output. */
+export function renderTerminalMarkdown(value: string, options: MarkdownRenderOptions = {}): string {
+  if (!(options.rich ?? interactive)) return value;
+  const width = options.width ?? outputWidth();
+  const source = value.replace(/\r/g, "").trim().split("\n");
+  const output: string[] = [];
+  let inCode = false;
+  let paragraph: string[] = [];
+
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    output.push(...wrapped(paragraph.join(" "), "  ", "  ", width));
+    paragraph = [];
+  };
+
+  for (const raw of source) {
+    const line = raw.trimEnd();
+    if (/^\s*```/.test(line)) {
+      flushParagraph();
+      inCode = !inCode;
+      if (inCode) output.push(ui.gray(`  ${"─".repeat(Math.max(8, width - 4))}`));
+      else output.push(ui.gray(`  ${"─".repeat(Math.max(8, width - 4))}`));
+      continue;
+    }
+    if (inCode) {
+      output.push(`${ui.cyan("  │")} ${line}`);
+      continue;
+    }
+    if (!line.trim()) {
+      flushParagraph();
+      if (output.at(-1) !== "") output.push("");
+      continue;
+    }
+
+    const heading = line.match(/^\s*(#{1,6})\s+(.+)$/);
+    const bullet = line.match(/^(\s*)[-*+]\s+(.+)$/);
+    const numbered = line.match(/^(\s*)(\d+)[.)]\s+(.+)$/);
+    const quote = line.match(/^\s*>\s?(.*)$/);
+    const rule = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line);
+
+    if (heading) {
+      flushParagraph();
+      const label = inlineMarkdown(heading[2].replace(/\s+#+\s*$/, ""));
+      output.push(heading[1].length === 1 ? `  ${ui.bold(ui.cyan(label))}` : `  ${ui.bold(label)}`);
+    } else if (bullet) {
+      flushParagraph();
+      const depth = Math.min(3, Math.floor(bullet[1].length / 2));
+      const indent = "  ".repeat(depth + 1);
+      const prefix = `${indent}${ui.cyan("•")} `;
+      output.push(...wrapped(bullet[2], prefix, " ".repeat(visibleLength(prefix)), width));
+    } else if (numbered) {
+      flushParagraph();
+      const depth = Math.min(3, Math.floor(numbered[1].length / 2));
+      const indent = "  ".repeat(depth + 1);
+      const marker = `${numbered[2]}.`;
+      const prefix = `${indent}${ui.cyan(marker)} `;
+      output.push(...wrapped(numbered[3], prefix, " ".repeat(visibleLength(prefix)), width));
+    } else if (quote) {
+      flushParagraph();
+      output.push(...wrapped(quote[1], `${ui.gray("  │")} `, "    ", width).map(ui.dim));
+    } else if (rule) {
+      flushParagraph();
+      output.push(ui.gray(`  ${"─".repeat(Math.max(8, width - 4))}`));
+    } else {
+      paragraph.push(line.trim());
+    }
+  }
+  flushParagraph();
+  while (output.at(-1) === "") output.pop();
+  return output.join("\n");
+}
 
 export function panel(title: string, lines: string[], width = 68): string {
   const inner = Math.max(24, width - 4);

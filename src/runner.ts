@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import type { Agent, AgentRunResult, RouteResult, RouterConfig } from "./types.js";
+import type { Agent, AgentRunResult, RouteResult, RouterConfig, TokenUsage } from "./types.js";
 import type { PhaseLogMeta, RunLogger } from "./logging.js";
 
 export function commandExists(command: string): boolean {
@@ -13,7 +13,14 @@ export function commandVersion(command: string): string {
   return (result.stdout || result.stderr || "").trim() || `exit ${result.status}`;
 }
 
-function argsForRoute(route: RouteResult, prompt: string, config: RouterConfig, headless: boolean, structuredProgress: boolean): { args: string[]; env: any } {
+function argsForRoute(
+  route: RouteResult,
+  prompt: string,
+  config: RouterConfig,
+  headless: boolean,
+  structuredProgress: boolean,
+  permissionMode?: RouterConfig["claude"]["permissionMode"],
+): { args: string[]; env: any } {
   const provider = config[route.agent];
   const env: any = { ...process.env };
   const args = [...(provider.args ?? [])];
@@ -22,7 +29,8 @@ function argsForRoute(route: RouteResult, prompt: string, config: RouterConfig, 
     if (headless) args.push("-p");
     args.push("--model", route.model);
     if (structuredProgress && headless) args.push("--output-format", "stream-json", "--verbose");
-    if (headless && provider.permissionMode) args.push("--permission-mode", provider.permissionMode);
+    const effectivePermissionMode = permissionMode ?? provider.permissionMode;
+    if (headless && effectivePermissionMode) args.push("--permission-mode", effectivePermissionMode);
     if (route.effort !== "auto") env.CLAUDE_CODE_EFFORT_LEVEL = route.effort;
     args.push(prompt);
   } else {
@@ -45,6 +53,23 @@ export interface ParsedProviderEvent {
   messages: Array<{ category: string; text: string }>;
   candidateOutput?: string;
   finalOutput?: string;
+  usage?: TokenUsage;
+}
+
+function number(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+export function addTokenUsage(a?: TokenUsage, b?: TokenUsage): TokenUsage | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  return {
+    uncachedInputTokens: a.uncachedInputTokens + b.uncachedInputTokens,
+    cachedInputTokens: a.cachedInputTokens + b.cachedInputTokens,
+    cacheWriteInputTokens: a.cacheWriteInputTokens + b.cacheWriteInputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    reasoningOutputTokens: a.reasoningOutputTokens + b.reasoningOutputTokens,
+  };
 }
 
 export function claudeProgress(event: any): ParsedProviderEvent {
@@ -83,16 +108,26 @@ export function claudeProgress(event: any): ParsedProviderEvent {
   }
 
   // Intentionally do not surface raw thinking/reasoning content.
+  const rawUsage = event.type === "result" ? event.usage : undefined;
+  const usage = rawUsage ? {
+    uncachedInputTokens: number(rawUsage.input_tokens),
+    cachedInputTokens: number(rawUsage.cache_read_input_tokens),
+    cacheWriteInputTokens: number(rawUsage.cache_creation_input_tokens),
+    outputTokens: number(rawUsage.output_tokens),
+    reasoningOutputTokens: 0,
+  } : undefined;
   return {
     messages,
     candidateOutput: candidate.length ? candidate.join("\n") : undefined,
     finalOutput: event.type === "result" && event.result ? String(event.result) : undefined,
+    usage,
   };
 }
 
 export function codexProgress(event: any): ParsedProviderEvent {
   const messages: Array<{ category: string; text: string }> = [];
   let candidateOutput: string | undefined;
+  let usage: TokenUsage | undefined;
   if (!event || typeof event !== "object") return { messages };
 
   if (event.type === "thread.started") messages.push({ category: "system", text: `thread started${event.thread_id ? ` ${event.thread_id}` : ""}` });
@@ -102,6 +137,17 @@ export function codexProgress(event: any): ParsedProviderEvent {
   else if (event.type === "turn.completed") {
     const u = event.usage;
     messages.push({ category: "result", text: u ? `turn completed tokens in=${u.input_tokens ?? "?"} cached=${u.cached_input_tokens ?? "?"} out=${u.output_tokens ?? "?"}` : "turn completed" });
+    if (u) {
+      const input = number(u.input_tokens);
+      const cached = number(u.cached_input_tokens);
+      usage = {
+        uncachedInputTokens: Math.max(0, input - cached),
+        cachedInputTokens: cached,
+        cacheWriteInputTokens: number(u.cache_write_input_tokens),
+        outputTokens: number(u.output_tokens),
+        reasoningOutputTokens: number(u.reasoning_output_tokens),
+      };
+    }
   }
 
   if ((event.type === "item.started" || event.type === "item.completed") && event.item) {
@@ -136,13 +182,26 @@ export function codexProgress(event: any): ParsedProviderEvent {
         break;
     }
   }
-  return { messages, candidateOutput };
+  return { messages, candidateOutput, usage };
 }
 
-function extractQuestion(text: string): string | undefined {
+export function extractQuestion(text: string): string | undefined {
   const match = text.match(/(?:^|\n)\s*AIROUTE_QUESTION:\s*(.+?)(?:\n|$)/is);
   const question = match?.[1]?.trim();
-  return question && !/[<>]/.test(question) ? question : undefined;
+  if (question && !/[<>]/.test(question)) return question;
+
+  // Providers occasionally ignore the marker after a tool is denied and turn the
+  // denial into a natural-language blocking question. Only recognize a narrow
+  // fallback here so optional closing offers do not unexpectedly resume a run.
+  const paragraphs = text.trim().split(/\n\s*\n/).map(value => value.trim()).filter(Boolean);
+  const last = paragraphs.at(-1);
+  if (!last || !/\?\s*$/.test(last)) return undefined;
+  const blockingSignal = /\b(?:approval|permission|authori[sz]ation|your (?:input|decision|confirmation)|need you to|cannot (?:continue|proceed)|can't (?:continue|proceed)|blocked)\b/i;
+  return blockingSignal.test(last) ? last : undefined;
+}
+
+export function isApprovalAnswer(answer: string): boolean {
+  return /^(?:approve|approved)$/i.test(answer.trim());
 }
 
 export function progressFor(agent: Agent, event: any): ParsedProviderEvent {
@@ -160,14 +219,14 @@ export async function runAgent(
   route: RouteResult,
   prompt: string,
   config: RouterConfig,
-  options: { headless?: boolean; capture?: boolean; logger?: RunLogger; logMeta?: PhaseLogMeta } = {}
+  options: { headless?: boolean; capture?: boolean; logger?: RunLogger; logMeta?: PhaseLogMeta; permissionMode?: RouterConfig["claude"]["permissionMode"] } = {}
 ): Promise<AgentRunResult> {
   const provider = config[route.agent];
   assertAllowedModel(route, config);
   const headless = options.headless ?? false;
   const capture = options.capture ?? false;
   const structuredProgress = Boolean(options.logger && headless);
-  const { args, env } = argsForRoute(route, prompt, config, headless, structuredProgress);
+  const { args, env } = argsForRoute(route, prompt, config, headless, structuredProgress, options.permissionMode);
 
   options.logger?.metadata(`command=${provider.command} args=${JSON.stringify(args.slice(0, -1))} promptChars=${prompt.length}`);
 
@@ -186,6 +245,7 @@ export async function runAgent(
   let finalOutput = "";
   let stdoutBuffer = "";
   let question: string | undefined;
+  let usage: TokenUsage | undefined;
 
   const handleStructuredLine = (line: string) => {
     if (!line.trim()) return;
@@ -199,6 +259,7 @@ export async function runAgent(
       }
       if (progress.candidateOutput) candidateOutput = progress.candidateOutput;
       if (progress.finalOutput) finalOutput = progress.finalOutput;
+      usage = addTokenUsage(usage, progress.usage);
       const semanticOutput = progress.finalOutput ?? progress.candidateOutput;
       if (!question && semanticOutput) question = extractQuestion(semanticOutput);
     } catch {
@@ -235,5 +296,5 @@ export async function runAgent(
   if (structuredProgress && stdoutBuffer.trim()) handleStructuredLine(stdoutBuffer);
   const output = (finalOutput || candidateOutput || fallbackOutput).trim();
   if (!question) question = extractQuestion(output);
-  return { exitCode, output, question };
+  return { exitCode, output, question, usage };
 }

@@ -89,6 +89,14 @@ The default Codex mapping is:
 
 Use `airo models` to inspect the active Claude and Codex mappings.
 
+Inspect the subscription/login context and the locally configured provider defaults:
+
+```bash
+airo account
+```
+
+Some provider CLIs report the authentication method but deliberately omit the account email. AIRO displays that limitation instead of reading or decoding stored credentials. If a default model cannot be detected from provider settings, run `airo setup` to provide the comparison model or set `defaultModel` inside that provider's AIRO configuration.
+
 ## Sessions and chat
 
 ```bash
@@ -120,6 +128,10 @@ Follow-ups preserve a compact summary of recent outcomes and are routed independ
 
 If an agent needs a blocking decision, it can emit `AIROUTE_QUESTION:`. AIRO asks for input and resumes the same phase, with up to four clarification rounds per phase.
 
+For Claude runs, answering exactly `approve` or `approved` resumes the same model and phase with `bypassPermissions` for that continuation attempt. Other answers preserve the configured permission mode.
+
+The test suite enforces at least 95% line and function coverage. Run it with `npm test` or `npm run test:coverage`.
+
 ## Logs and feedback
 
 Choose how much progress appears in the terminal:
@@ -141,6 +153,7 @@ airo logs
 airo logs <run-id>
 airo logs --follow <run-id>
 airo history 20
+airo usage 20
 ```
 
 Teach the router from a completed run:
@@ -159,6 +172,8 @@ In an interactive terminal, AIRO also asks a short question after every complete
 `yes` records positive feedback, `no` records negative feedback, and Enter skips the rating. Disable `history.learningEnabled` to turn off the prompt and feedback-based routing adjustments.
 
 Each persisted run stores its combined log, individual phase logs, structured event streams, and a clean `final-output.txt` containing only the provider's terminal response. Set `logging.persist` to `false` to keep the terminal stream without writing run files.
+
+`airo usage` reports provider-supplied token telemetry. Its savings percentage compares non-cached tokens against observed, comparable successful AIRO runs that used the locally configured default model for that provider. The command labels the result as a historical estimate and withholds it until enough baseline data exists; it does not infer token savings from model names.
 
 ## Configuration
 
@@ -192,9 +207,11 @@ Claude runs use `permissionMode: "acceptEdits"` by default so headless implement
 | `airo --adaptive "task"` | Force multi-phase orchestration |
 | `airo setup` | Configure allowed models and tiers |
 | `airo models` | Show the active model mapping |
+| `airo account` | Show provider login status and detected default models |
 | `airo doctor` | Check provider commands and storage paths |
 | `airo logs [run-id]` | List or print persisted logs |
 | `airo history [limit]` | Show routing history |
+| `airo usage [limit]` | Show measured token usage and default-model comparison |
 | `airo feedback good\|bad ...` | Rate a completed run |
 | `airo --version` | Print the installed version |
 

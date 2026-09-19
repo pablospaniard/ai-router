@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Agent, LogLevel, PhaseKind } from "./types.js";
-import { agentColor, divider, sectionRule, statusIcon, ui } from "./ui.js";
+import { agentColor, divider, outputWidth, renderTerminalMarkdown, sectionRule, statusIcon, ui } from "./ui.js";
 import { dataRootDir } from "./paths.js";
 
 export interface RunLoggerOptions {
@@ -157,10 +157,11 @@ export class RunLogger {
     if (this.persist) fs.writeFileSync(file, `${clean}\n`);
     this.append(this.combinedPath, `${nowTime()} [airo][final] ${clean.replace(/\n/g, "\n[final] ")}`);
 
+    const width = outputWidth();
     this.console("");
-    this.console(sectionRule(`${statusIcon("ok")} Final result`));
-    this.console(ui.white(clean));
-    this.console(ui.gray("─".repeat(68)));
+    this.console(sectionRule(`${statusIcon("ok")} Final result`, width));
+    this.console(renderTerminalMarkdown(clean, { width }));
+    this.console(ui.gray("─".repeat(width)));
   }
 }
 

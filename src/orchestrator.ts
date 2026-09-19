@@ -1,6 +1,6 @@
 import { appendHistory, newHistoryId, newRunId } from "./history.js";
 import { routeTask } from "./router.js";
-import { commandExists, runAgent } from "./runner.js";
+import { addTokenUsage, commandExists, isApprovalAnswer, runAgent } from "./runner.js";
 import type { Agent, Effort, ModelTier, PhaseExecution, PhaseKind, PhasePlan, RouteResult, RouterConfig, SessionState } from "./types.js";
 import { compactSessionContext } from "./session.js";
 import { RunLogger } from "./logging.js";
@@ -122,16 +122,21 @@ export async function orchestrate(task: string, config: RouterConfig, options: {
     const started = Date.now();
     let effectivePrompt = prompt;
     let result = await runAgent(route, effectivePrompt, config, { headless: true, capture: true, logger, logMeta });
+    let usage = result.usage;
     let clarificationCount = 0;
     while (result.question && options.askUser && clarificationCount < 4) {
       clarificationCount++;
       logger.question(result.question);
       const answer = (await options.askUser(result.question)).trim();
-      logger.status(`input received → resuming ${p.kind}`);
+      const permissionMode = route.agent === "claude" && isApprovalAnswer(answer) ? "bypassPermissions" : undefined;
+      logger.status(permissionMode
+        ? `approval received → resuming ${p.kind} with elevated permissions`
+        : `input received → resuming ${p.kind}`);
       effectivePrompt = `${prompt}\n\nThe previous attempt paused for clarification.\nQuestion: ${result.question}\nUser answer: ${answer}\n\nContinue the same phase using this answer. Do not repeat the question unless another genuinely blocking decision is required.`;
-      result = await runAgent(route, effectivePrompt, config, { headless: true, capture: true, logger, logMeta });
+      result = await runAgent(route, effectivePrompt, config, { headless: true, capture: true, logger, logMeta, permissionMode });
+      usage = addTokenUsage(usage, result.usage);
     }
-    const execution: PhaseExecution = { phase: p, route, exitCode: result.exitCode, durationMs: Date.now() - started, output: result.output };
+    const execution: PhaseExecution = { phase: p, route, exitCode: result.exitCode, durationMs: Date.now() - started, output: result.output, usage };
     executions.push(execution);
     logger.phaseEnd(logMeta, result.exitCode, execution.durationMs);
 
@@ -142,7 +147,7 @@ export async function orchestrate(task: string, config: RouterConfig, options: {
       task: prompt, originalTask: task, phaseKind: p.kind, phaseIndex: i + 1,
       agent: route.agent, modelTier: route.modelTier, model: route.model, effort: route.effort,
       complexity: route.complexity, exitCode: result.exitCode, durationMs: execution.durationMs,
-      outputExcerpt: tail(result.output, config.orchestration.outputTailChars)
+      outputExcerpt: tail(result.output, config.orchestration.outputTailChars), usage
     });
 
     if (needsRecovery(execution) && config.orchestration.recoverOnFailure && plans.length < config.orchestration.maxPhases) {

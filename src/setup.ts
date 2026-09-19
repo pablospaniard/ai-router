@@ -2,6 +2,7 @@ import readline from "node:readline";
 import { DEFAULT_CONFIG, loadConfig, writeGlobalConfig } from "./config.js";
 import type { Agent, Effort, ModelProfile, ModelTier, RouterConfig } from "./types.js";
 import { agentColor, divider, promptLabel, statusIcon, ui } from "./ui.js";
+import { detectDefaultModels } from "./account.js";
 
 function ask(rl: any, question: string): Promise<string> {
   return new Promise(resolve => rl.question(`${promptLabel()}${question} `, resolve));
@@ -65,6 +66,18 @@ export async function runSetup(): Promise<string> {
       for (const tier of ["fast","balanced","deep"] as const) {
         config[agent].models[tier] = await pickTier(rl, agent, tier, config[agent].allowedModels ?? [], config[agent].models[tier]);
       }
+    }
+
+    console.log(""); console.log(divider("Usage comparison"));
+    console.log(ui.dim("AIRO compares measured runs with each provider's normal default model."));
+    const detectedDefaults = detectDefaultModels(config);
+    for (const agent of ["claude", "codex"] as const) {
+      const current = config[agent].defaultModel;
+      const automatic = detectedDefaults[agent] ?? "not detected";
+      const hint = current ? current : `auto: ${automatic}`;
+      const answer = (await ask(rl, `Default ${agentColor(agent, agent)} model for comparison [${ui.dim(hint)}]:`)).trim();
+      if (answer.toLowerCase() === "auto") delete config[agent].defaultModel;
+      else if (answer) config[agent].defaultModel = answer;
     }
 
     const tie = (await ask(rl, `Default provider on a tie [${agentColor(config.defaultAgent, config.defaultAgent)}]:`)).trim().toLowerCase();

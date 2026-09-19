@@ -8,7 +8,7 @@ import { printModels } from "./models.js";
 import { appendHistory, historyPath, newHistoryId, readHistory, setFeedback } from "./history.js";
 import { orchestrate, planPhases, shouldOrchestrate } from "./orchestrator.js";
 import { routeTask } from "./router.js";
-import { commandExists, commandVersion, runAgent } from "./runner.js";
+import { addTokenUsage, commandExists, commandVersion, isApprovalAnswer, runAgent } from "./runner.js";
 import { appendTurn, clearActiveSession, createSession, getActiveSession, listSessions, loadSession, setActiveSession } from "./session.js";
 import { findRunLogs, followFile, logsRoot, recentRunDirs, RunLogger } from "./logging.js";
 import type { Agent, Effort, FeedbackRating, LogLevel, ModelTier, SessionState } from "./types.js";
@@ -17,6 +17,8 @@ import { INTERACTIVE_COMMANDS, parseFeedbackAnswer, parseInteractiveInput, taskA
 import { migrateLegacyPaths } from "./paths.js";
 import { shouldRunInitialSetup } from "./startup.js";
 import { singleRunPrompt } from "./prompts.js";
+import { inspectAccounts } from "./account.js";
+import { buildUsageReport, nonCachedTokens, processedTokens } from "./usage.js";
 
 function requireText(file: string): string { return fs.readFileSync(file, "utf8"); }
 
@@ -37,11 +39,13 @@ function help() {
   console.log(`  ${commandColor('airo setup')}                              ${ui.gray("pick allowed models and tier mapping")}`);
   console.log(`  ${commandColor('airo models')}                             ${ui.gray("show active model mapping")}`);
   console.log(`  ${commandColor('airo doctor')}                             ${ui.gray("check providers and paths")}`);
+  console.log(`  ${commandColor('airo account')}                            ${ui.gray("show provider login and default models")}`);
   console.log("");
   console.log(ui.bold("Observability"));
   console.log(`  ${commandColor('airo logs [runId]')}                       ${ui.gray("show persisted logs")}`);
   console.log(`  ${commandColor('airo logs --follow [runId]')}              ${ui.gray("follow a run live")}`);
   console.log(`  ${commandColor('airo history [limit]')}                    ${ui.gray("show routing history")}`);
+  console.log(`  ${commandColor('airo usage [limit]')}                      ${ui.gray("show token use and measured savings")}`);
   console.log(`  ${commandColor('airo feedback good|bad ...')}              ${ui.gray("teach the router")}`);
   console.log("");
   console.log(ui.bold("Sessions"));
@@ -150,14 +154,19 @@ async function singleRun(args: ReturnType<typeof parseArgs>, config: any, path: 
   const basePrompt = singleRunPrompt(args.task, session);
   let effectivePrompt = basePrompt;
   let result = await runAgent(routed, effectivePrompt, config, { headless: true, capture: true, logger, logMeta });
+  let usage = result.usage;
   let clarificationCount = 0;
   while (result.question && clarificationCount < 4) {
     clarificationCount++;
     logger.question(result.question);
     const answer = await askUser(result.question);
-    logger.status("input received → resuming single phase");
+    const permissionMode = routed.agent === "claude" && isApprovalAnswer(answer) ? "bypassPermissions" : undefined;
+    logger.status(permissionMode
+      ? "approval received → resuming single phase with elevated permissions"
+      : "input received → resuming single phase");
     effectivePrompt = `${basePrompt}\n\nPrevious clarification question: ${result.question}\nUser answer: ${answer}\n\nContinue the task using this answer. If another blocking decision is required, use AIROUTE_QUESTION: <question>.`;
-    result = await runAgent(routed, effectivePrompt, config, { headless: true, capture: true, logger, logMeta });
+    result = await runAgent(routed, effectivePrompt, config, { headless: true, capture: true, logger, logMeta, permissionMode });
+    usage = addTokenUsage(usage, result.usage);
   }
   const durationMs = Date.now() - started;
   logger.phaseEnd(logMeta, result.exitCode, durationMs);
@@ -168,7 +177,7 @@ async function singleRun(args: ReturnType<typeof parseArgs>, config: any, path: 
     timestamp: new Date().toISOString(), cwd: process.cwd(), task: args.task, originalTask: args.task,
     agent: routed.agent, modelTier: routed.modelTier, model: routed.model, effort: routed.effort,
     complexity: routed.complexity, exitCode: result.exitCode, durationMs,
-    outputExcerpt: result.output.slice(-config.orchestration.outputTailChars),
+    outputExcerpt: result.output.slice(-config.orchestration.outputTailChars), usage,
   });
   return { exitCode: result.exitCode, runId: singleRunId, output: result.output, summaries: [`single:${routed.agent}/${routed.model} exit=${result.exitCode}`] };
 }
@@ -309,6 +318,20 @@ async function main() {
   if (raw[0] === "setup") { await runSetup(); return; }
   if (raw[0] === "models") { printModels(); return; }
 
+  if (raw[0] === "account") {
+    console.log(divider("Provider accounts"));
+    for (const account of inspectAccounts(config)) {
+      const icon = account.available && account.authenticated ? statusIcon("ok") : statusIcon("error");
+      const identity = account.identity ?? (account.authenticated ? "identity not exposed by CLI" : account.status);
+      console.log(`${icon} ${agentColor(account.agent, account.agent.padEnd(6))} ${ui.bold(identity)}`);
+      if (account.authMethod) console.log(`  ${ui.gray("authentication")} ${ui.cyan(account.authMethod)}`);
+      console.log(`  ${ui.gray("default model ")} ${account.defaultModel ? ui.cyan(account.defaultModel) : ui.yellow("not detected; set defaultModel in AIRO config")}`);
+      const tiers = (["fast", "balanced", "deep"] as const).map(tier => `${tier}=${config[account.agent].models[tier].model}`).join(" · ");
+      console.log(`  ${ui.gray("AIRO models   ")} ${ui.dim(tiers)}`);
+    }
+    return;
+  }
+
   if (raw[0] === "doctor") {
     console.log(divider("Doctor")); console.log(`${ui.gray("Config ")} ${path ? ui.cyan(path) : ui.yellow("built-in defaults")}`);
     console.log(`${ui.gray("History")} ${ui.cyan(historyPath(config.history))}`);
@@ -322,6 +345,31 @@ async function main() {
   if (raw[0] === "history") {
     const limit = Math.max(1, Number(raw[1] ?? 15));
     for (const r of readHistory(config.history).slice(-limit).reverse()) console.log(`${r.id}${r.runId ? ` run=${r.runId}` : ""}${r.sessionId ? ` session=${r.sessionId}` : ""} ${r.agent}/${r.model} ${r.effort} exit=${r.exitCode} ${r.feedback ?? ""}`);
+    return;
+  }
+  if (raw[0] === "usage") {
+    const limit = Math.max(1, Number(raw[1] ?? 20));
+    const report = buildUsageReport(config, limit);
+    console.log(divider(`Token usage · last ${report.records.length} measured phase(s)`));
+    if (!report.records.length) {
+      console.log(`${statusIcon("info")} ${ui.gray("No provider token telemetry is available yet. Run a task with persisted logging enabled.")}`);
+      return;
+    }
+    console.log(`${ui.bold("Non-cached")} ${ui.cyan(nonCachedTokens(report.totals).toLocaleString())} ${ui.gray("tokens")}`);
+    console.log(`${ui.bold("Cache reads")} ${ui.cyan(report.totals.cachedInputTokens.toLocaleString())} ${ui.gray("tokens")}`);
+    console.log(`${ui.bold("Processed")}  ${ui.cyan(processedTokens(report.totals).toLocaleString())} ${ui.gray("tokens")}`);
+    console.log(`${ui.bold("Output")}     ${ui.cyan(report.totals.outputTokens.toLocaleString())} ${ui.gray("tokens (included above)")}`);
+    for (const agent of ["claude", "codex"] as const) {
+      console.log(`${agentColor(agent, agent.padEnd(6))} ${ui.gray("default model")} ${report.defaults[agent] ? ui.cyan(report.defaults[agent]!) : ui.yellow("not detected")}`);
+    }
+    if (report.savings) {
+      const value = Math.abs(report.savings.percent).toFixed(1);
+      const comparison = report.savings.percent >= 0 ? `AIRO used ${value}% fewer non-cached tokens` : `AIRO used ${value}% more non-cached tokens`;
+      console.log(`${statusIcon(report.savings.percent >= 0 ? "ok" : "info")} ${ui.bold(comparison)} ${ui.gray("than comparable successful runs on provider-default models.")}`);
+      console.log(`${ui.gray(`Coverage: ${report.savings.comparedRecords}/${report.savings.totalRecords} measured phase(s). This is a historical estimate, not a same-task A/B test.`)}`);
+    } else {
+      console.log(`${statusIcon("info")} ${ui.gray("Default-model comparison unavailable: at least two comparable measured runs on a detected provider-default model are needed.")}`);
+    }
     return;
   }
   if (raw[0] === "feedback") {

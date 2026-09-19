@@ -4,6 +4,7 @@
   "claude": {
     "command": "claude",
     "args": [],
+    "defaultModel": "sonnet",
     "permissionMode": "acceptEdits",
     "models": {
       "fast": {
@@ -28,6 +29,7 @@
   "codex": {
     "command": "codex",
     "args": [],
+    "defaultModel": "gpt-5.6-sol",
     "models": {
       "fast": {
         "model": "gpt-5.6-luna",
