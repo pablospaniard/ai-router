@@ -165,7 +165,7 @@ class SidebarProvider {
             return;
         }
         if (commands[command]) {
-            await this.run(commands[command], true, command.slice(1));
+            await this.run(command === "/sessions" ? ["sessions", "--limit", "5"] : commands[command], true, command.slice(1));
             return;
         }
         this.notice(`Unknown command: ${command}. Type /help for available commands.`);
@@ -182,6 +182,7 @@ class SidebarProvider {
             return;
         }
         const commands = {
+            history: ["sessions", "--limit", "5"],
             models: ["models"],
             account: ["account"],
             usage: ["usage"],

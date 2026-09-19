@@ -844,7 +844,10 @@ async function main() {
     return;
   }
   if (raw[0] === "sessions") {
-    const list = listSessions();
+    const limitIndex = raw.findIndex((arg: string) => arg === "--limit");
+    const requestedLimit = limitIndex >= 0 ? Number(raw[limitIndex + 1]) : undefined;
+    const limit = Number.isInteger(requestedLimit) && requestedLimit! > 0 ? requestedLimit : undefined;
+    const list = listSessions().slice(0, limit);
     if (!list.length) console.log(`${statusIcon("info")} ${ui.gray("No sessions for this repo.")}`);
     for (const s of list)
       console.log(
