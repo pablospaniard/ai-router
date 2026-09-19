@@ -9,12 +9,14 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/airo-cli"><img src="https://img.shields.io/npm/v/airo-cli?logo=npm&label=npm" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/airo-cli"><img src="https://img.shields.io/npm/dm/airo-cli?logo=npm&label=downloads" alt="npm downloads"></a>
+  <a href="https://github.com/pablospaniard/airo-cli/actions/workflows/publish.yml"><img src="https://github.com/pablospaniard/airo-cli/actions/workflows/publish.yml/badge.svg" alt="Build and publish status"></a>
+  <a href="https://github.com/pablospaniard/airo-cli/blob/main/LICENSE"><img src="https://img.shields.io/github/license/pablospaniard/airo-cli" alt="License"></a>
   <a href="https://github.com/pablospaniard/airo-cli/stargazers"><img src="https://img.shields.io/github/stars/pablospaniard/airo-cli?style=flat&logo=github" alt="GitHub stars"></a>
   <a href="https://github.com/pablospaniard/airo-cli/issues"><img src="https://img.shields.io/github/issues/pablospaniard/airo-cli?style=flat&logo=github" alt="GitHub issues"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/sponsors/pablospaniard"><img src="https://img.shields.io/badge/Sponsor-30363D?style=for-the-badge&logo=GitHub-Sponsors&logoColor=EA4AAA" alt="Sponsor AIRO"></a>
+  <a href="https://github.com/sponsors/pablospaniard"><img src="https://img.shields.io/badge/buy%20me%20a%20coffee-30363D?style=for-the-badge&logo=GitHub-Sponsors&logoColor=EA4AAA" alt="Buy me a coffee"></a>
 </p>
 
 AIRO accepts a task, chooses the right provider and model tier, and can coordinate a multi-phase workflow across agents. It runs locally with your existing CLI logins—no separate model API keys or proxy service required.
