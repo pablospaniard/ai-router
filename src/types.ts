@@ -69,6 +69,7 @@ export interface ScoreReason {
 export interface RouteResult {
   agent: Agent;
   modelTier: ModelTier;
+  userRequestedTier?: ModelTier;
   model: string;
   effort: Effort;
   complexity: number;

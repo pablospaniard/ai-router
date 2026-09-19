@@ -62,16 +62,18 @@ function tail(s: string, n: number): string {
   return clean.length <= n ? clean : clean.slice(-n);
 }
 
-function applyPhasePreference(base: RouteResult, p: PhasePlan, config: RouterConfig): RouteResult {
+export function applyPhasePreference(base: RouteResult, p: PhasePlan, config: RouterConfig): RouteResult {
   const route = { ...base, reasons: [...base.reasons], modelReasons: [...base.modelReasons] };
   if (p.preferredAgent) {
     route.agent = p.preferredAgent;
     route.reasons.push({ agent: p.preferredAgent, points: 20, reason: `phase ${p.kind} preference` });
   }
-  if (p.preferredTier) route.modelTier = p.preferredTier;
+  if (p.preferredTier && !route.userRequestedTier) route.modelTier = p.preferredTier;
   const profile = config[route.agent].models[route.modelTier];
   route.model = profile.model;
-  route.effort = p.preferredEffort ?? profile.effort ?? route.effort;
+  route.effort = route.userRequestedTier
+    ? profile.effort ?? route.effort
+    : p.preferredEffort ?? profile.effort ?? route.effort;
   route.modelReasons.push(`phase ${p.kind} → ${route.agent}/${route.modelTier}`);
   return route;
 }

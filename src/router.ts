@@ -46,6 +46,15 @@ function effortForTier(tier: ModelTier): Effort {
   return tier === "fast" ? "low" : tier === "balanced" ? "medium" : "high";
 }
 
+const MOST_POWERFUL_MODEL = /\b(?:use|using|choose|pick|select|with)\s+(?:the\s+)?(?:most\s+(?:powerful|powerfull|capable)|strongest)\s+(?:available\s+)?model\b/i;
+const AVOID_MOST_POWERFUL_MODEL = /\b(?:do\s+not|don't|never|avoid)\s+use\s+(?:the\s+)?(?:most\s+(?:powerful|powerfull|capable)|strongest)\s+(?:available\s+)?model\b/i;
+
+export function requestedModelTier(task: string): ModelTier | undefined {
+  if (AVOID_MOST_POWERFUL_MODEL.test(task)) return undefined;
+  if (MOST_POWERFUL_MODEL.test(task)) return "deep";
+  return undefined;
+}
+
 export function routeTask(task: string, config: RouterConfig): RouteResult {
   const reasons: ScoreReason[] = [];
   const modelReasons: string[] = [];
@@ -53,6 +62,7 @@ export function routeTask(task: string, config: RouterConfig): RouteResult {
   let forcedTier: ModelTier | undefined;
   let forcedEffort: Effort | undefined;
   let matchedRule: string | undefined;
+  const userRequestedTier = requestedModelTier(task);
 
   for (const rule of config.rules) {
     try {
@@ -96,8 +106,8 @@ export function routeTask(task: string, config: RouterConfig): RouteResult {
   if (compounds >= 3) complexity += 1;
   complexity = clampComplexity(complexity);
 
-  let modelTier = forcedTier ?? tierFromComplexity(complexity);
-  if (!forcedTier && config.history.learningEnabled) {
+  let modelTier = userRequestedTier ?? forcedTier ?? tierFromComplexity(complexity);
+  if (!userRequestedTier && !forcedTier && config.history.learningEnabled) {
     const scores = learned.tierBoosts;
     const best = (Object.keys(scores) as ModelTier[]).sort((a,b) => scores[b] - scores[a])[0];
     if (scores[best] >= 1.25 && scores[best] > scores[modelTier] + 0.5) {
@@ -109,9 +119,10 @@ export function routeTask(task: string, config: RouterConfig): RouteResult {
   const profile = config[agent].models[modelTier];
   const effort = forcedEffort ?? profile.effort ?? effortForTier(modelTier);
   modelReasons.unshift(`complexity ${complexity}/5 → ${modelTier} tier`);
+  if (userRequestedTier) modelReasons.unshift(`user explicitly requested the most powerful model → ${userRequestedTier} tier`);
 
   return {
-    agent, modelTier, model: profile.model, effort, complexity,
+    agent, modelTier, userRequestedTier, model: profile.model, effort, complexity,
     claudeScore, codexScore, reasons, modelReasons, matchedRule
   };
 }

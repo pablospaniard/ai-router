@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DEFAULT_CONFIG } from "../config.js";
-import { needsRecovery, planPhases, shouldOrchestrate } from "../orchestrator.js";
-import { routeTask } from "../router.js";
+import { applyPhasePreference, needsRecovery, planPhases, shouldOrchestrate } from "../orchestrator.js";
+import { requestedModelTier, routeTask } from "../router.js";
 import type { RouterConfig } from "../types.js";
 
 function config(overrides: Partial<RouterConfig> = {}): RouterConfig {
@@ -27,6 +27,24 @@ test("routes a small test implementation to Codex with a fast model", () => {
   assert.equal(route.agent, "codex");
   assert.equal(route.modelTier, "fast");
   assert.equal(route.model, DEFAULT_CONFIG.codex.models.fast.model);
+});
+
+test("honors an explicit request for the most powerful model", () => {
+  const current = config();
+  const task = "use most powerfull model and review again";
+  const route = routeTask(task, current);
+  const review = planPhases(task, current)[0];
+  const phaseRoute = applyPhasePreference(route, review, current);
+
+  assert.equal(requestedModelTier(task), "deep");
+  assert.equal(phaseRoute.userRequestedTier, "deep");
+  assert.equal(phaseRoute.modelTier, "deep");
+  assert.equal(phaseRoute.model, current.claude.models.deep.model);
+  assert.equal(phaseRoute.effort, current.claude.models.deep.effort);
+});
+
+test("does not mistake a negative model instruction for a deep-tier request", () => {
+  assert.equal(requestedModelTier("do not use the most powerful model"), undefined);
 });
 
 test("applies the first matching custom routing rule", () => {
