@@ -8,7 +8,7 @@ import { printModels } from "./models.js";
 import { appendHistory, historyPath, newHistoryId, readHistory, setFeedback } from "./history.js";
 import { orchestrate, planPhases, shouldOrchestrate } from "./orchestrator.js";
 import { agentForModel, routeTask } from "./router.js";
-import { addTokenUsage, commandExists, commandVersion, isApprovalAnswer, runAgent } from "./runner.js";
+import { addTokenUsage, commandExists, commandVersion, isApprovalAnswer, isUsageLimitError, runAgent } from "./runner.js";
 import { appendTurn, clearActiveSession, createSession, getActiveSession, listSessions, loadSession, setActiveSession } from "./session.js";
 import { findRunLogs, followFile, logsRoot, recentRunDirs, RunLogger } from "./logging.js";
 import type { Agent, Effort, FeedbackRating, LogLevel, ModelTier, SessionState } from "./types.js";
@@ -151,6 +151,16 @@ async function singleRun(args: ReturnType<typeof parseArgs>, config: any, path: 
   const basePrompt = singleRunPrompt(args.task, session);
   let effectivePrompt = basePrompt;
   let result = await runAgent(routed, effectivePrompt, config, { headless: true, capture: true, logger, logMeta });
+  if (isUsageLimitError(result.output, result.exitCode)) {
+    const fallbackAgent = routed.agent === "claude" ? "codex" : "claude";
+    if (commandExists(config[fallbackAgent].command)) {
+      const profile = config[fallbackAgent].models[routed.modelTier];
+      logger.status(`${routed.agent} usage limit detected → falling back to ${fallbackAgent}/${profile.model}`);
+      routed = { ...routed, agent: fallbackAgent, model: profile.model, effort: profile.effort ?? routed.effort };
+      Object.assign(logMeta, { agent: routed.agent, model: routed.model, effort: routed.effort });
+      result = await runAgent(routed, effectivePrompt, config, { headless: true, capture: true, logger, logMeta });
+    }
+  }
   let usage = result.usage;
   let clarificationCount = 0;
   while (result.question && clarificationCount < 4) {

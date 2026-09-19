@@ -7,6 +7,12 @@ export function commandExists(command: string): boolean {
   return result.status === 0;
 }
 
+/** Provider errors that usually mean this account/model cannot serve the request right now. */
+export function isUsageLimitError(text: string, exitCode?: number): boolean {
+  if (!text && exitCode === 0) return false;
+  return /(?:usage|quota|rate)[ -]?(?:limit|limited|exhausted|exceeded)|(?:credit|credits|balance)[ -]?(?:limit|exhausted|insufficient)|too many requests|(?:429|resource_exhausted|rate_limit_error|quota_exceeded)|billing.{0,30}(?:limit|disabled|past due)|out of credits/i.test(text);
+}
+
 export function commandVersion(command: string): string {
   const result = spawnSync(command, ["--version"], { encoding: "utf8", timeout: 5000 });
   if (result.error) return `ERROR: ${result.error.message}`;
@@ -236,6 +242,7 @@ export async function runAgent(
   let candidateOutput = "";
   let finalOutput = "";
   let stdoutBuffer = "";
+  let stderrOutput = "";
   let question: string | undefined;
   let usage: TokenUsage | undefined;
 
@@ -276,6 +283,7 @@ export async function runAgent(
 
   child.stderr?.on("data", (chunk: any) => {
     const s = String(chunk);
+    stderrOutput += s;
     if (options.logger && options.logMeta) options.logger.stderr(options.logMeta, s);
     else process.stderr.write(s);
   });
@@ -286,7 +294,7 @@ export async function runAgent(
   });
 
   if (structuredProgress && stdoutBuffer.trim()) handleStructuredLine(stdoutBuffer);
-  const output = (finalOutput || candidateOutput || fallbackOutput).trim();
+  const output = `${(finalOutput || candidateOutput || fallbackOutput).trim()}${exitCode !== 0 && stderrOutput.trim() ? `\n${stderrOutput.trim()}` : ""}`.trim();
   if (!question) question = extractQuestion(output);
   return { exitCode, output, question, usage };
 }

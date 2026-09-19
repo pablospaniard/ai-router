@@ -1,6 +1,6 @@
 {
   "name": "airo-cli",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Adaptive Intelligence Routing & Orchestration for Claude Code and Codex CLI",
   "keywords": [
     "ai",

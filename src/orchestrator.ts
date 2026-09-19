@@ -1,6 +1,6 @@
 import { appendHistory, newHistoryId, newRunId } from "./history.js";
 import { routeTask } from "./router.js";
-import { addTokenUsage, commandExists, isApprovalAnswer, runAgent } from "./runner.js";
+import { addTokenUsage, commandExists, isApprovalAnswer, isUsageLimitError, runAgent } from "./runner.js";
 import type { Agent, Effort, ModelTier, PhaseExecution, PhaseKind, PhasePlan, RouteResult, RouterConfig, SessionState } from "./types.js";
 import { compactSessionContext } from "./session.js";
 import { RunLogger } from "./logging.js";
@@ -86,6 +86,14 @@ function fallbackIfMissing(route: RouteResult, config: RouterConfig): RouteResul
   return { ...route, agent: fallback, model: p.model, effort: p.effort ?? route.effort };
 }
 
+function fallbackIfLimited(route: RouteResult, config: RouterConfig): RouteResult | undefined {
+  const fallback: Agent = route.agent === "claude" ? "codex" : "claude";
+  if (!commandExists(config[fallback].command)) return undefined;
+  const profile = config[fallback].models[route.modelTier];
+  return { ...route, agent: fallback, model: profile.model, effort: profile.effort ?? route.effort,
+    modelReasons: [...route.modelReasons, `provider usage limit → fallback ${fallback}`] };
+}
+
 export function needsRecovery(exec: PhaseExecution): boolean {
   if (exec.exitCode !== 0) return true;
   return /(?:^|\n)\s*(?:status:\s*)?(?:failed|unresolved|unable to complete|could not complete)\b/im.test(exec.output);
@@ -122,6 +130,15 @@ export async function orchestrate(task: string, config: RouterConfig, options: {
     const started = Date.now();
     let effectivePrompt = prompt;
     let result = await runAgent(route, effectivePrompt, config, { headless: true, capture: true, logger, logMeta });
+    if (isUsageLimitError(result.output, result.exitCode)) {
+      const fallback = fallbackIfLimited(route, config);
+      if (fallback) {
+        logger.status(`${route.agent} usage limit detected → falling back to ${fallback.agent}/${fallback.model}`);
+        route = fallback;
+        Object.assign(logMeta, { agent: route.agent, model: route.model, effort: route.effort });
+        result = await runAgent(route, effectivePrompt, config, { headless: true, capture: true, logger, logMeta });
+      }
+    }
     let usage = result.usage;
     let clarificationCount = 0;
     while (result.question && options.askUser && clarificationCount < 4) {
