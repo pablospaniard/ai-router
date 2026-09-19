@@ -164,6 +164,5 @@ export async function orchestrate(task: string, config: RouterConfig, options: {
   logger.status(`adaptive run ${runId} complete exit=${exitCode}`);
   if (finalExecution) logger.finalOutput(finalExecution.output);
   if (logger.persist) logger.status(`logs: ${logger.runDir}`);
-  logger.status(`rate: airo feedback good ${runId}  |  airo feedback bad ${runId}`);
   return { runId, phases: executions, exitCode };
 }

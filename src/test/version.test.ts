@@ -12,5 +12,5 @@ test("keeps package and documented versions aligned", () => {
   assert.equal(packageJson.name, "airo-cli");
   assert.equal(packageJson.bin.airo, "dist/cli.js");
   assert.equal(packageJson.bin["ai-router"], "dist/cli.js");
-  assert.match(readme, new RegExp(`^# AIRO v${VERSION.replaceAll(".", "\\.")}$`, "m"));
+  assert.match(readme, /^<h1 align="center">AIRO<\/h1>$/m);
 });

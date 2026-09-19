@@ -1,6 +1,21 @@
-# AIRO v0.7.0
+<h1 align="center">AIRO</h1>
 
-**Adaptive Intelligence Routing & Orchestration** for Claude Code and Codex CLI.
+<p align="center">
+  <img src="docs/airo-setup.png" alt="AIRO's first-run model setup" width="760">
+</p>
+
+<p align="center">Adaptive Intelligence Routing &amp; Orchestration for Claude Code and Codex CLI.</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/airo-cli"><img src="https://img.shields.io/npm/v/airo-cli?logo=npm&label=npm" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/airo-cli"><img src="https://img.shields.io/npm/dm/airo-cli?logo=npm&label=downloads" alt="npm downloads"></a>
+  <a href="https://github.com/pablospaniard/airo-cli/stargazers"><img src="https://img.shields.io/github/stars/pablospaniard/airo-cli?style=flat&logo=github" alt="GitHub stars"></a>
+  <a href="https://github.com/pablospaniard/airo-cli/issues"><img src="https://img.shields.io/github/issues/pablospaniard/airo-cli?style=flat&logo=github" alt="GitHub issues"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/sponsors/pablospaniard"><img src="https://img.shields.io/badge/Sponsor-30363D?style=for-the-badge&logo=GitHub-Sponsors&logoColor=EA4AAA" alt="Sponsor AIRO"></a>
+</p>
 
 AIRO accepts a task, chooses the right provider and model tier, and can coordinate a multi-phase workflow across agents. It runs locally with your existing CLI logins—no separate model API keys or proxy service required.
 
@@ -20,27 +35,31 @@ request → route → analyze → implement → test → review
 - Persists phase logs, final output, routing history, and user feedback locally.
 - Inserts a recovery phase when a workflow fails or reports an unresolved problem.
 
-## Requirements
+## Get started
 
-- Node.js 20 or newer.
-- Claude Code and/or Codex CLI installed and authenticated.
-- An active subscription or login supported by the corresponding CLI.
+1. Install Node.js 22 or newer, then install and sign in to Claude Code, Codex CLI, or both. AIRO uses those existing CLI logins—there are no AIRO API keys to create.
+2. Install AIRO and check your local setup:
 
-AIRO can fall back to the available provider during adaptive runs when one CLI is missing.
+   ```bash
+   npm install --global airo-cli
+   airo doctor
+   ```
 
-## Install
+3. Launch AIRO. On the first interactive launch, choose models for the `fast`, `balanced`, and `deep` tiers (press Enter to keep the suggested defaults).
 
-```bash
-npm install --global airo-cli
-airo doctor
-```
+   ```bash
+   airo
+   ```
 
-To develop AIRO locally instead, clone the repository, run `npm install`, and use
-`npm link` to expose the `airo` command.
+4. Enter a task, or run one directly from your shell:
 
-The first interactive run launches model setup automatically. Run `airo setup` at any time to revisit it.
+   ```bash
+   airo "review this PR for regressions"
+   ```
 
-## Quick start
+AIRO can fall back to the available provider during adaptive runs when one CLI is missing. Run `airo setup` at any time to revisit the model choices.
+
+## Common workflows
 
 Open the interactive workspace:
 
@@ -75,41 +94,75 @@ Preview the decision without running an agent:
 airo --dry-run --explain "migrate this legacy module"
 ```
 
-## How routing works
+## Models and routing
 
-AIRO scores the request for provider and complexity signals, applies matching configuration rules, and incorporates feedback from similar prior work. Complexity maps to a model tier rather than a hard-coded model ID.
+AIRO scores each request for provider and complexity signals, applies matching configuration rules, and can incorporate feedback from similar prior work. It then maps the work to a `fast`, `balanced`, or `deep` tier. A tier is a default choice, not a restriction.
 
-The default Codex mapping is:
+Out of the box, the automatic defaults are:
 
-| Tier | Model | Effort |
-| --- | --- | --- |
-| `fast` | `gpt-5.6-luna` | `low` |
-| `balanced` | `gpt-5.6-terra` | `medium` |
-| `deep` | `gpt-5.6-sol` | `xhigh` |
+| Provider | Tier | Model | Effort |
+| --- | --- | --- | --- |
+| Claude Code | `fast` | `haiku` | `low` |
+| Claude Code | `balanced` | `sonnet` | `medium` |
+| Claude Code | `deep` | `opus` | `high` |
+| Codex CLI | `fast` | `gpt-5.6-luna` | `low` |
+| Codex CLI | `balanced` | `gpt-5.6-terra` | `medium` |
+| Codex CLI | `deep` | `gpt-5.6-sol` | `xhigh` |
 
-Use `airo models` to inspect the active Claude and Codex mappings. These three tiers per provider are automatic routing defaults, not an allowlist: every model exposed by the installed provider CLI remains available. Override a default with `--model`, optionally with `--agent`, or ask for a recognizable model ID directly in the task (for example, `airo "use gpt-6-astra to review this"`).
-
-Inspect the subscription/login context and the locally configured provider defaults:
+You can use any model your Claude Code or Codex CLI subscription makes available. AIRO does not maintain an allowlist. The setup wizard asks which models you have access to and lets you assign three of them to the automatic tiers; use it again whenever your access changes:
 
 ```bash
+airo setup
+airo models
+```
+
+For a one-off request, name a model explicitly. AIRO infers Claude for names such as `opus`, `sonnet`, `haiku`, or `claude-*`, and Codex for names such as `gpt-*` or `codex-*`. You can also pin the provider yourself:
+
+```bash
+airo --model opus "review this authentication change"
+airo --agent claude --model sonnet "explain this failing test"
+airo --agent codex --model gpt-6-astra "review this PR for regressions"
+```
+
+The `--model` value is passed to the selected provider CLI, so it must be a model that CLI accepts for your account. If an explicit model name is unfamiliar to AIRO, include `--agent claude` or `--agent codex`.
+
+### How AIRO detects your access
+
+AIRO uses the Claude Code and Codex CLI installations already on your machine. It asks each CLI for its login status and authentication method; that can identify whether the CLI is signed in, but providers may intentionally not expose your email address or a complete list of subscription entitlements. AIRO never reads or decodes your stored credentials.
+
+Use these commands to see what AIRO can see:
+
+```bash
+airo doctor
 airo account
 ```
 
-Some provider CLIs report the authentication method but deliberately omit the account email. AIRO displays that limitation instead of reading or decoding stored credentials. If a default model cannot be detected from provider settings, run `airo setup` to provide the comparison model or set `defaultModel` inside that provider's AIRO configuration.
+`airo account` also reports each provider's configured comparison default. AIRO looks for that default in its own configuration first, then in `ANTHROPIC_MODEL` or Claude settings for Claude Code, and in Codex's `config.toml` for Codex. This default is used for the `airo usage` comparison; it does not limit which model you can run. If it cannot be found automatically, set it in `airo setup` or as `defaultModel` in that provider's AIRO configuration.
 
-## Sessions and chat
+## Sessions and interactive chat
+
+### Start work and continue it
+
+Every task runs in an AIRO session. A session keeps a concise record of earlier outcomes so a follow-up has useful context, even if AIRO selects a different provider or model. It does not share the hidden conversation history of Claude or Codex between runs.
 
 ```bash
-airo
-airo chat
-airo session
-airo sessions
-airo session new "new task"
-airo session clear
+airo "review this PR for regressions"          # starts a session
+airo --continue "fix the critical issue"       # continues the active repository session
 airo --session <session-id> "add tests for that fix"
 ```
 
-Inside the interactive workspace, preferences persist for the current process:
+Manage saved sessions with:
+
+```bash
+airo session                                  # show the active session
+airo sessions                                 # list repository sessions
+airo session new "investigate checkout flow"  # start and activate a fresh session
+airo session clear                            # clear the active repository session
+```
+
+### Use the interactive workspace
+
+Run `airo` (or `airo chat`) to stay in a terminal workspace and send several tasks without retyping the command. The choices below last for that running workspace; use `airo setup` or configuration to make persistent model changes.
 
 ```text
 /mode auto|adaptive|single
@@ -124,7 +177,9 @@ Inside the interactive workspace, preferences persist for the current process:
 /exit
 ```
 
-Follow-ups preserve a compact summary of recent outcomes and are routed independently. AIRO does not imply that Claude and Codex share hidden conversation state.
+Type `/help` in the workspace for the complete command list. Tab completion is available for slash commands.
+
+### Attach a file or answer a question
 
 To share a local file from the terminal, save it on disk, then use `/attach /path/to/file` before entering your task. You can also drag a supported file from an IDE such as VS Code directly into the running AIRO terminal; press Enter and AIRO will attach it and ask the provider to inspect it. Quoted paths and paths containing spaces are supported. AIRO passes the local path to the provider and clears the attachment after the next task. The file stays on disk; AIRO does not upload it itself. Supported extensions are PNG, JPEG, GIF, WebP, BMP, TIFF, PDF, Markdown (`.md`/`.markdown`), and JSON.
 
@@ -165,13 +220,13 @@ airo feedback good <run-id>
 airo feedback bad <run-id> "used more reasoning than necessary"
 ```
 
-In an interactive terminal, AIRO also asks a short question after every completed run:
+After a completed run, AIRO continues straight to the next prompt and shows an optional feedback command:
 
 ```text
-? Was this result helpful? [y/n, Enter to skip]
+ⓘ optional feedback: /feedback good last  |  /feedback bad last
 ```
 
-`yes` records positive feedback, `no` records negative feedback, and Enter skips the rating. Disable `history.learningEnabled` to turn off the prompt and feedback-based routing adjustments.
+Use `good` to record positive feedback or `bad` to record negative feedback. Disable `history.learningEnabled` to turn off feedback-based routing adjustments.
 
 Each persisted run stores its combined log, individual phase logs, structured event streams, and a clean `final-output.txt` containing only the provider's terminal response. Set `logging.persist` to `false` to keep the terminal stream without writing run files.
 
@@ -197,27 +252,61 @@ On the first command after upgrading, AIRO copies legacy global configuration an
 
 Claude runs use `permissionMode: "acceptEdits"` by default so headless implementation tasks can edit the working tree. Change it to `auto`, `manual`, `dontAsk`, or `plan` in configuration when a more restrictive mode is appropriate. The legacy `allowedModels` setting is accepted for configuration compatibility but no longer restricts model access.
 
-## Command reference
+## Troubleshooting
 
-| Command | Purpose |
+| Problem | What to do |
 | --- | --- |
-| `airo` | Open the interactive workspace |
-| `airo "task"` | Start a new logical session |
-| `airo --continue "task"` | Continue the active repository session |
-| `airo chat` | Start interactive mode |
-| `airo --single "task"` | Force a single-agent run |
-| `airo --adaptive "task"` | Force multi-phase orchestration |
-| `airo setup` | Configure the three automatic model tiers |
-| `airo models` | Show the active model mapping |
-| `airo account` | Show provider login status and detected default models |
-| `airo doctor` | Check provider commands and storage paths |
-| `airo logs [run-id]` | List or print persisted logs |
-| `airo history [limit]` | Show routing history |
-| `airo usage [limit]` | Show measured token usage and default-model comparison |
-| `airo feedback good\|bad ...` | Rate a completed run |
-| `airo --version` | Print the installed version |
+| AIRO says a provider is unavailable | Run `airo doctor`. Install the missing `claude` or `codex` CLI, make sure its command is on your `PATH`, then sign in with that CLI. |
+| AIRO cannot tell whether I am signed in | Run `airo account`, then sign in or refresh the login using the provider's own CLI. Provider CLIs may not reveal an email address or subscription name; that is expected. |
+| My model is rejected | Confirm the model is available to your current provider subscription, then run it with `--agent claude` or `--agent codex` and `--model <model>`. Use `airo setup` to update automatic tier defaults. |
+| The comparison default is missing | Run `airo setup` and enter the provider's usual model when prompted, or set that provider's `defaultModel` in AIRO configuration. This only affects `airo usage` comparisons. |
+| Node will not run AIRO | Check `node --version`; AIRO requires Node.js 22 or newer. Upgrade Node, reinstall AIRO, and run `airo doctor` again. |
+| Claude asks for permission or cannot edit | Review the Claude `permissionMode` in AIRO configuration. The default is `acceptEdits`; choose `manual` or `plan` when you want stricter control. |
+
+## CLI command reference
+
+| Command | What it does |
+| --- | --- |
+| `airo` / `airo chat` | Open the interactive workspace. |
+| `airo "task"` | Create a session and route a task automatically. |
+| `airo --continue "task"` | Route a follow-up using the active repository session. |
+| `airo --session <id> "task"` | Run a task in a specific saved session. |
+| `airo --single "task"` | Run one selected or automatically routed agent. |
+| `airo --adaptive "task"` | Force the multi-phase workflow. |
+| `airo --dry-run --explain "task"` | Show the routing decision without running an agent. |
+| `airo --agent <claude\|codex> --tier <fast\|balanced\|deep> "task"` | Pin a provider and model tier. |
+| `airo --model <model> --effort <level> "task"` | Override the chosen model and reasoning effort. |
+| `airo --log <compact\|live\|verbose> "task"` | Control terminal progress detail. |
+| `airo setup` | Configure automatic model tiers. |
+| `airo models` | Print the active provider/model mapping. |
+| `airo account` | Show provider login status and detected defaults. |
+| `airo doctor` | Check provider commands and storage locations. |
+| `airo config init` | Create a project-local `.airo.json`. |
+| `airo session` / `airo sessions` | Show the active session or list repository sessions. |
+| `airo session new ["task"]` | Start and activate a fresh session. |
+| `airo session clear` | Clear the active repository session. |
+| `airo logs [run-id]` / `airo logs --follow <run-id>` | List, print, or follow persisted run logs. |
+| `airo history [limit]` | Show recent routing history. |
+| `airo usage [limit]` | Show provider-reported tokens and the historical default-model comparison. |
+| `airo feedback <good\|bad> [id\|run-id\|last] [note]` | Teach the router from a completed run. |
+| `airo --help` / `airo --version` | Show help or the installed version. |
 
 Set `NO_COLOR=1` to disable ANSI colors.
+
+## Local usage
+
+To run the latest source locally, [clone the AIRO repository](https://github.com/pablospaniard/airo-cli), install its dependencies, build it, and link the command:
+
+```bash
+git clone https://github.com/pablospaniard/airo-cli.git
+cd airo-cli
+npm install
+npm run build
+npm link
+airo doctor
+```
+
+After linking, `airo` uses the source checkout while you work on it. Run `npm test` before submitting changes. To remove the local link later, run `npm unlink --global airo-cli`.
 
 ## Development
 

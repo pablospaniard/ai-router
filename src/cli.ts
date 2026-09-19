@@ -13,7 +13,7 @@ import { appendTurn, clearActiveSession, createSession, getActiveSession, listSe
 import { findRunLogs, followFile, logsRoot, recentRunDirs, RunLogger } from "./logging.js";
 import type { Agent, Effort, FeedbackRating, LogLevel, ModelTier, SessionState } from "./types.js";
 import { VERSION } from "./version.js";
-import { cleanDroppedPath, INTERACTIVE_COMMANDS, isSupportedAttachmentPath, parseFeedbackAnswer, parseInteractiveInput, taskArgs, type InteractivePreferences } from "./interactive.js";
+import { cleanDroppedPath, INTERACTIVE_COMMANDS, isSupportedAttachmentPath, parseInteractiveInput, taskArgs, type InteractivePreferences } from "./interactive.js";
 import { migrateLegacyPaths } from "./paths.js";
 import { shouldRunInitialSetup, shouldShowWelcome } from "./startup.js";
 import { singleRunPrompt } from "./prompts.js";
@@ -103,24 +103,12 @@ async function askTerminal(question: string): Promise<string> {
   }
 }
 
-async function askFeedbackTerminal(): Promise<string> {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    return await new Promise<string>(resolve => rl.question(`${ui.yellow("?")} ${ui.bold("Was this result helpful?")} ${ui.gray("[y/n, Enter to skip]")} `, resolve));
-  } finally {
-    rl.close();
-  }
-}
-
-async function collectRunFeedback(runId: string, config: any, askFeedback: () => Promise<string>): Promise<void> {
-  if (!process.stdin.isTTY || !config.history.enabled || !config.history.learningEnabled) return;
-  const rating = parseFeedbackAnswer(await askFeedback());
-  if (!rating) {
-    console.log(`${statusIcon("info")} ${ui.gray("feedback skipped")}`);
-    return;
-  }
-  setFeedback(config.history, rating, runId);
-  console.log(`${statusIcon("ok")} ${ui.gray("feedback saved ·")} ${rating === "good" ? ui.green("helpful") : ui.red("not helpful")}`);
+function showFeedbackOption(runId: string, config: any, interactive: boolean): void {
+  if (!config.history.enabled) return;
+  const command = interactive
+    ? "/feedback good last  |  /feedback bad last"
+    : `airo feedback good ${runId}  |  airo feedback bad ${runId}`;
+  console.log(`${statusIcon("info")} ${ui.gray("optional feedback:")} ${commandColor(command)}`);
 }
 
 async function singleRun(args: ReturnType<typeof parseArgs>, config: any, path: string | undefined, session?: SessionState, askUser: (question: string) => Promise<string> = askTerminal) {
@@ -191,7 +179,7 @@ async function singleRun(args: ReturnType<typeof parseArgs>, config: any, path: 
   return { exitCode: result.exitCode, runId: singleRunId, output: result.output, summaries: [`single:${routed.agent}/${routed.model} exit=${result.exitCode}`] };
 }
 
-async function execute(args: ReturnType<typeof parseArgs>, session: SessionState | undefined, config: any, path?: string, askUser: (question: string) => Promise<string> = askTerminal, askFeedback: () => Promise<string> = askFeedbackTerminal) {
+async function execute(args: ReturnType<typeof parseArgs>, session: SessionState | undefined, config: any, path?: string, askUser: (question: string) => Promise<string> = askTerminal) {
   const adaptive = args.adaptive || (!args.single && shouldOrchestrate(args.task, config));
   if (adaptive) {
     const result = await orchestrate(args.task, config, { dryRun: args.dryRun, explain: args.explain, session, logLevel: args.logLevel, askUser });
@@ -200,7 +188,7 @@ async function execute(args: ReturnType<typeof parseArgs>, session: SessionState
       routeSummary: result.phases.map(p => `${p.phase.kind}:${p.route.agent}/${p.route.model}`).join(" → "),
       phaseSummaries: result.phases.map(p => `${p.phase.kind} exit=${p.exitCode}; ${p.output.replace(/\s+/g," ").slice(-400)}`)
     });
-    if (!args.dryRun) await collectRunFeedback(result.runId, config, askFeedback);
+    if (!args.dryRun) showFeedbackOption(result.runId, config, Boolean(session));
     return result.exitCode;
   }
   const r = await singleRun(args, config, path, session, askUser);
@@ -208,7 +196,7 @@ async function execute(args: ReturnType<typeof parseArgs>, session: SessionState
     turnId: r.runId + "-turn", runId: r.runId, timestamp: new Date().toISOString(), userPrompt: args.task,
     routeSummary: r.summaries[0] ?? "single", phaseSummaries: r.summaries
   });
-  if (!args.dryRun) await collectRunFeedback(r.runId, config, askFeedback);
+  if (!args.dryRun) showFeedbackOption(r.runId, config, Boolean(session));
   return r.exitCode;
 }
 
@@ -267,7 +255,6 @@ async function chatLoop(config: any, path?: string) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, completer, historySize: 200, removeHistoryDuplicates: true });
   const ask = () => new Promise<string>(resolve => rl.question(interactivePrompt(session, preferences), resolve));
   const askAnswer = (_question: string) => new Promise<string>(resolve => rl.question(`${promptLabel()}${ui.yellow("answer")}: `, resolve));
-  const askFeedback = () => new Promise<string>(resolve => rl.question(`${ui.yellow("?")} ${ui.bold("Was this result helpful?")} ${ui.gray("[y/n, Enter to skip]")} `, resolve));
   try {
     while (true) {
       let action = parseInteractiveInput(await ask());
@@ -356,7 +343,7 @@ async function chatLoop(config: any, path?: string) {
         const adaptive = args.adaptive || (!args.single && shouldOrchestrate(args.task, config));
         console.log(`${statusIcon("work")} ${ui.gray("workflow")} ${adaptive ? ui.magenta("adaptive") : ui.cyan("single")} ${ui.gray("· preparing run")}`);
         try {
-          await execute(args, session, config, path, askAnswer, askFeedback);
+          await execute(args, session, config, path, askAnswer);
           session = loadSession(session.sessionId);
         } catch (error) {
           console.log(`${statusIcon("error")} ${ui.red(error instanceof Error ? error.message : String(error))}`);
