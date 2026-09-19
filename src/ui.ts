@@ -32,7 +32,10 @@ export function divider(title?: string): string {
 }
 export function sectionRule(title: string, width = 68): string {
   const label = ` ${title} `;
-  return ui.gray(`──${label}${"─".repeat(Math.max(0, width - visibleLength(label) - 2))}`);
+  const remaining = Math.max(0, width - visibleLength(label));
+  const left = Math.floor(remaining / 2);
+  const right = remaining - left;
+  return ui.gray(`${"─".repeat(left)}${label}${"─".repeat(right)}`);
 }
 export function promptLabel(): string { return `${ui.green("❯")} `; }
 export function command(s: string): string { return ui.bold(ui.cyan(s)); }
