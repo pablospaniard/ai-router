@@ -21,6 +21,7 @@ export type InteractiveAction =
   | { kind: "account" }
   | { kind: "usage"; limit?: number }
   | { kind: "logs" }
+  | { kind: "attach"; path: string }
   | { kind: "feedback"; rating: FeedbackRating; target?: string; note?: string }
   | { kind: "clear" }
   | { kind: "set-mode"; value: InteractiveMode }
@@ -30,9 +31,22 @@ export type InteractiveAction =
   | { kind: "error"; message: string };
 
 export const INTERACTIVE_COMMANDS = [
-  "/help", "/status", "/new", "/sessions", "/models", "/account", "/usage", "/logs", "/feedback", "/mode",
+  "/help", "/status", "/new", "/sessions", "/models", "/account", "/usage", "/logs", "/attach", "/feedback", "/mode",
   "/agent", "/tier", "/log", "/clear", "/exit"
 ];
+
+/** Normalize the path most terminals insert when a file is dragged into readline. */
+export function cleanDroppedPath(input: string): string {
+  const value = input.trim();
+  if ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))) {
+    return value.slice(1, -1).replace(/\\([\\"'])/g, "$1");
+  }
+  return value;
+}
+
+export function isSupportedAttachmentPath(input: string): boolean {
+  return /\.(png|jpe?g|gif|webp|bmp|tiff?|pdf|md|markdown|json)$/i.test(cleanDroppedPath(input));
+}
 
 export function parseInteractiveInput(input: string): InteractiveAction {
   const value = input.trim();
@@ -55,6 +69,10 @@ export function parseInteractiveInput(input: string): InteractiveAction {
     return { kind: "usage", limit };
   }
   if (command === "/logs") return { kind: "logs" };
+  if (command === "/attach") {
+    const path = args.join(" ").trim();
+    return path ? { kind: "attach", path } : { kind: "error", message: "Usage: /attach <file-path>" };
+  }
   if (command === "/feedback") {
     if (first !== "good" && first !== "bad") return { kind: "error", message: "Usage: /feedback good|bad [id|runId|last] [note]" };
     return { kind: "feedback", rating: first, target: args[1], note: args.slice(2).join(" ") || undefined };

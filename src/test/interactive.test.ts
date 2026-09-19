@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseFeedbackAnswer, parseInteractiveInput, taskArgs } from "../interactive.js";
+import { cleanDroppedPath, isSupportedAttachmentPath, parseFeedbackAnswer, parseInteractiveInput, taskArgs } from "../interactive.js";
+
+test("normalizes paths pasted by terminal drag and drop", () => {
+  assert.equal(cleanDroppedPath('"/tmp/My Notes/report.pdf"'), "/tmp/My Notes/report.pdf");
+  assert.equal(cleanDroppedPath("'/tmp/photo.png'"), "/tmp/photo.png");
+  assert.equal(isSupportedAttachmentPath("/tmp/report.pdf"), true);
+  assert.equal(isSupportedAttachmentPath("/tmp/report.txt"), false);
+});
 
 test("treats regular interactive input as a task", () => {
   assert.deepEqual(parseInteractiveInput("  fix the parser  "), { kind: "task", task: "fix the parser" });
@@ -21,6 +28,8 @@ test("parses interactive preference commands", () => {
   assert.deepEqual(parseInteractiveInput("/account"), { kind: "account" });
   assert.deepEqual(parseInteractiveInput("/usage 5"), { kind: "usage", limit: 5 });
   assert.deepEqual(parseInteractiveInput("/logs"), { kind: "logs" });
+  assert.deepEqual(parseInteractiveInput("/attach /tmp/screenshot.png"), { kind: "attach", path: "/tmp/screenshot.png" });
+  assert.deepEqual(parseInteractiveInput("/attach /tmp/notes.md"), { kind: "attach", path: "/tmp/notes.md" });
   assert.deepEqual(parseInteractiveInput("/feedback good last shipped"), { kind: "feedback", rating: "good", target: "last", note: "shipped" });
   assert.deepEqual(parseInteractiveInput("/clear"), { kind: "clear" });
   assert.deepEqual(parseInteractiveInput("/new named session"), { kind: "new", title: "named session" });

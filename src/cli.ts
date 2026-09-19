@@ -13,12 +13,14 @@ import { appendTurn, clearActiveSession, createSession, getActiveSession, listSe
 import { findRunLogs, followFile, logsRoot, recentRunDirs, RunLogger } from "./logging.js";
 import type { Agent, Effort, FeedbackRating, LogLevel, ModelTier, SessionState } from "./types.js";
 import { VERSION } from "./version.js";
-import { INTERACTIVE_COMMANDS, parseFeedbackAnswer, parseInteractiveInput, taskArgs, type InteractivePreferences } from "./interactive.js";
+import { cleanDroppedPath, INTERACTIVE_COMMANDS, isSupportedAttachmentPath, parseFeedbackAnswer, parseInteractiveInput, taskArgs, type InteractivePreferences } from "./interactive.js";
 import { migrateLegacyPaths } from "./paths.js";
-import { shouldRunInitialSetup } from "./startup.js";
+import { shouldRunInitialSetup, shouldShowWelcome } from "./startup.js";
 import { singleRunPrompt } from "./prompts.js";
 import { inspectAccounts } from "./account.js";
 import { buildUsageReport, nonCachedTokens, processedTokens } from "./usage.js";
+import { firstRunWelcome } from "./welcome.js";
+import pathModule from "node:path";
 
 function requireText(file: string): string { return fs.readFileSync(file, "utf8"); }
 
@@ -237,14 +239,21 @@ function interactiveHelp(): string {
     `${commandColor("/agent auto|claude|codex")}   ${ui.gray("pin or auto-select a provider")}`,
     `${commandColor("/tier auto|fast|balanced|deep")} ${ui.gray("set model tier")}`,
     `${commandColor("/log compact|live|verbose")}  ${ui.gray("set output detail")}`,
-    `${commandColor("/models")} ${commandColor("/account")} ${commandColor("/usage [limit]")} ${commandColor("/logs")}`,
-    `${commandColor("/feedback good|bad [id|runId|last] [note]")}`,
-    `${commandColor("/sessions")} ${commandColor("/clear")} ${commandColor("/exit")}`,
+    `${commandColor("/models")}             ${ui.gray("show active model mapping")}`,
+    `${commandColor("/account")}            ${ui.gray("show provider accounts")}`,
+    `${commandColor("/usage [limit]")}      ${ui.gray("show token usage")}`,
+    `${commandColor("/logs")}               ${ui.gray("show recent run logs")}`,
+    `${commandColor("/attach <file-path>")} ${ui.gray("attach a local image, PDF, Markdown, or JSON file to the next task")}`,
+    `${commandColor("/feedback good|bad [id|runId|last] [note]")} ${ui.gray("save run feedback")}`,
+    `${commandColor("/sessions")}           ${ui.gray("list repository sessions")}`,
+    `${commandColor("/clear")}              ${ui.gray("clear the screen")}`,
+    `${commandColor("/exit")}               ${ui.gray("exit interactive mode")}`,
   ], 76);
 }
 
 async function chatLoop(config: any, path?: string) {
   let session: SessionState = getActiveSession() ?? createSession("Interactive session");
+  let attachments: string[] = [];
   const preferences: InteractivePreferences = { mode: "auto", agent: "auto", logLevel: config.logging.level };
   console.log("");
   console.log(interactiveStatus(session, preferences, config, path));
@@ -261,7 +270,7 @@ async function chatLoop(config: any, path?: string) {
   const askFeedback = () => new Promise<string>(resolve => rl.question(`${ui.yellow("?")} ${ui.bold("Was this result helpful?")} ${ui.gray("[y/n, Enter to skip]")} `, resolve));
   try {
     while (true) {
-      const action = parseInteractiveInput(await ask());
+      let action = parseInteractiveInput(await ask());
       if (action.kind === "empty") continue;
       if (action.kind === "quit") break;
       if (action.kind === "help") { console.log(interactiveHelp()); continue; }
@@ -290,6 +299,19 @@ async function chatLoop(config: any, path?: string) {
         console.log(panel("Recent run logs", runs.length ? runs.map(run => `${ui.bold(run.runId)} ${ui.gray(run.mtime.toISOString())} ${ui.cyan(run.path)}`) : [ui.gray("No logs yet.")]));
         continue;
       }
+      if (action.kind === "attach") {
+        const attachmentPath = pathModule.resolve(action.path.replace(/^~/, process.env.HOME ?? "~"));
+        try {
+          const stat = fs.statSync(attachmentPath);
+          if (!stat.isFile()) throw new Error("not a file");
+          if (!isSupportedAttachmentPath(attachmentPath)) throw new Error("unsupported file extension");
+          attachments.push(attachmentPath);
+          console.log(`${statusIcon("ok")} ${ui.gray("attached file")} ${ui.cyan(attachmentPath)} ${ui.dim("(will be included with the next task)")}`);
+        } catch (error) {
+          console.log(`${statusIcon("error")} ${ui.red(`Cannot attach file: ${error instanceof Error ? error.message : String(error)}`)}`);
+        }
+        continue;
+      }
       if (action.kind === "feedback") {
         const updated = setFeedback(config.history, action.rating, action.target ?? "last", action.note);
         console.log(`${statusIcon("ok")} ${ui.gray("feedback saved for")} ${ui.bold(String(updated.length))} ${ui.gray("item(s)")}`);
@@ -313,7 +335,24 @@ async function chatLoop(config: any, path?: string) {
       else if (action.kind === "set-log") preferences.logLevel = action.value;
       else if (action.kind === "error") { console.log(`${statusIcon("error")} ${ui.red(action.message)}`); continue; }
       else if (action.kind === "task") {
-        const args = parseArgs(taskArgs(action.task, preferences));
+        // Terminals usually paste a dropped file as one path (sometimes quoted).
+        const droppedPath = cleanDroppedPath(action.task);
+        if (isSupportedAttachmentPath(droppedPath)) {
+          const attachmentPath = pathModule.resolve(droppedPath.replace(/^~/, process.env.HOME ?? "~"));
+          try {
+            if (!fs.statSync(attachmentPath).isFile()) throw new Error("not a file");
+            attachments.push(attachmentPath);
+            console.log(`${statusIcon("ok")} ${ui.gray("attached dropped file")} ${ui.cyan(attachmentPath)}`);
+            action = { kind: "task", task: "Inspect the attached file" };
+          } catch {
+            // A normal task ending in a filename should still be routed normally.
+          }
+        }
+        const attachmentContext = attachments.length
+          ? `\n\nAttached local file(s) for inspection:\n${attachments.map(file => `- ${file}`).join("\n")}\nUse the provider's local file inspection capability if available.`
+          : "";
+        const args = parseArgs(taskArgs(`${action.task}${attachmentContext}`, preferences));
+        attachments = [];
         const adaptive = args.adaptive || (!args.single && shouldOrchestrate(args.task, config));
         console.log(`${statusIcon("work")} ${ui.gray("workflow")} ${adaptive ? ui.magenta("adaptive") : ui.cyan("single")} ${ui.gray("· preparing run")}`);
         try {
@@ -344,9 +383,11 @@ async function main() {
   for (const error of migration.errors) console.error(`${statusIcon("error")} ${ui.yellow(`legacy data migration skipped: ${error}`)}`);
   let { config, path } = loadConfig();
 
+  if (shouldShowWelcome(raw, Boolean(process.stdin.isTTY))) {
+    console.log(firstRunWelcome(config));
+  }
+
   if (shouldRunInitialSetup(raw, Boolean(process.stdin.isTTY), Boolean(path))) {
-    console.log(`${statusIcon("info")} ${brand()} ${ui.bold("first run detected")}`);
-    console.log(`${ui.gray("No config found. Starting model setup; you can rerun it anytime with")} ${commandColor("airo setup")}.`);
     await runSetup();
     ({ config, path } = loadConfig());
   }
