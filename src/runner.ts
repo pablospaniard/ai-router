@@ -318,7 +318,10 @@ export async function runAgent(
 
   const child = spawn(provider.command, args, {
     cwd: process.cwd(),
-    stdio: ["inherit", "pipe", "pipe"],
+    // Headless providers receive the complete prompt as an argument. Leaving
+    // stdin open makes Codex wait for "additional input" forever when AIRO is
+    // launched by an editor or another process with piped stdin.
+    stdio: ["ignore", "pipe", "pipe"],
     env,
   });
   let fallbackOutput = "";

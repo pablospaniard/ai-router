@@ -1,5 +1,5 @@
 const interactive = Boolean(process.stdout.isTTY);
-const enabled = interactive && !process.env.NO_COLOR;
+const enabled = (interactive || process.env.AIRO_COLOR === "1") && !process.env.NO_COLOR;
 const wrap = (open: string, close: string, value: string) =>
   enabled ? `${open}${value}${close}` : value;
 

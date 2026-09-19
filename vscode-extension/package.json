@@ -109,8 +109,8 @@
             "live",
             "verbose"
           ],
-          "default": "compact",
-          "description": "AIRO output detail shown for sidebar tasks."
+          "default": "live",
+          "description": "AIRO output detail shown for sidebar tasks. Live is recommended so provider progress streams into the chat."
         }
       }
     }

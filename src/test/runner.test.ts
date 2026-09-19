@@ -348,6 +348,52 @@ test("returns only the latest Codex agent message from a structured run", async 
   }
 });
 
+test("closes stdin for structured headless providers", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-runner-stdin-"));
+  const command = path.join(dir, "mock-codex");
+  fs.writeFileSync(
+    command,
+    `#!/usr/bin/env node
+process.stdin.resume();
+process.stdin.once("end", () => {
+  process.stdout.write(JSON.stringify({
+    type: "item.completed",
+    item: { type: "agent_message", text: "stdin closed" }
+  }) + "\\n");
+});
+`,
+  );
+  fs.chmodSync(command, 0o755);
+
+  try {
+    const config = structuredClone(DEFAULT_CONFIG);
+    config.codex.command = command;
+    const route = routeTask("check stdin", config);
+    route.agent = "codex";
+    route.modelTier = "fast";
+    route.model = config.codex.models.fast.model;
+    const logger = new RunLogger({ runId: "stdin", level: "live", persist: false });
+    const run = await runAgent(route, "task", config, {
+      headless: true,
+      capture: true,
+      logger,
+      logMeta: {
+        phaseIndex: 1,
+        phaseTotal: 1,
+        phaseKind: "single",
+        agent: "codex",
+        model: route.model,
+        effort: route.effort,
+        tier: route.modelTier,
+      },
+    });
+
+    assert.equal(run.output, "stdin closed");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("passes a one-run Claude permission override and captures malformed output", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-runner-permission-"));
   const command = path.join(dir, "mock-claude");

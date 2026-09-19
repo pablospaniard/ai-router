@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import readline from "node:readline";
+import { execFileSync } from "node:child_process";
 import {
   agentColor,
   brand,
@@ -399,7 +400,10 @@ async function execute(
   return r.exitCode;
 }
 
-function interactivePrompt(session: SessionState, preferences: InteractivePreferences): string {
+export function interactivePrompt(
+  session: SessionState,
+  preferences: InteractivePreferences,
+): string {
   const mode =
     preferences.mode === "auto"
       ? ui.green("auto")
@@ -410,7 +414,19 @@ function interactivePrompt(session: SessionState, preferences: InteractivePrefer
     preferences.agent === "auto"
       ? ui.gray("auto-agent")
       : agentColor(preferences.agent, preferences.agent);
-  return `${brand()} ${ui.gray(session.sessionId.slice(0, 6))} ${mode} ${agent} ${ui.green("❯")} `;
+  const repo = pathModule.basename(process.cwd());
+  let branch = "detached";
+  try {
+    branch =
+      execFileSync("git", ["branch", "--show-current"], {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim() || "detached";
+  } catch {
+    // The prompt should remain usable outside a Git repository.
+  }
+  return `${brand()} ${ui.gray(session.sessionId.slice(0, 6))} ${ui.gray(`${repo}:${branch}`)} ${mode} ${agent} ${ui.green("❯")} `;
 }
 
 function interactiveStatus(

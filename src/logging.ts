@@ -71,6 +71,11 @@ export class RunLogger {
     process.stdout.write(value.endsWith("\n") ? value : `${value}\n`);
   }
 
+  private event(type: string, value: Record<string, unknown>) {
+    if (process.env.AIRO_STREAM_PROTOCOL !== "1") return;
+    this.console(`AIRO_EVENT ${JSON.stringify({ type, ...value })}`);
+  }
+
   private prettyStatus(message: string): string {
     if (message.includes(" complete"))
       return `${ui.gray(nowTime())} ${statusIcon("ok")} ${ui.bold("airo")} ${message}`;
@@ -157,6 +162,14 @@ export class RunLogger {
   phaseStart(meta: PhaseLogMeta) {
     const message = `phase ${meta.phaseIndex}/${meta.phaseTotal}: ${meta.phaseKind} → ${meta.agent}/${meta.model} effort=${meta.effort} tier=${meta.tier}`;
     this.append(this.combinedPath, `${nowTime()} [airo] ${message}`);
+    this.event("route", {
+      provider: meta.agent,
+      model: meta.model,
+      tier: meta.tier,
+      phase: meta.phaseKind,
+      phaseIndex: meta.phaseIndex,
+      phaseTotal: meta.phaseTotal,
+    });
     this.console("");
     this.console(
       sectionRule(
@@ -177,6 +190,8 @@ export class RunLogger {
   question(question: string) {
     const line = `${nowTime()} [airo][question] ${question}`;
     this.append(this.combinedPath, line);
+    const requiresApproval = /\b(?:approval|permission|authori[sz]ation)\b/i.test(question);
+    this.event(requiresApproval ? "permission" : "input", { question, requiresApproval });
     this.console("");
     this.console(divider("Input needed"));
     this.console(`${statusIcon("ask")} ${ui.yellow(ui.bold(question))}`);
@@ -185,6 +200,7 @@ export class RunLogger {
   finalOutput(output: string) {
     const clean = output.trim();
     if (!clean) return;
+    this.event("final", { text: clean });
     const file = path.join(this.runDir, "final-output.txt");
     if (this.persist) fs.writeFileSync(file, `${clean}\n`);
     this.append(
