@@ -322,6 +322,14 @@ pnpm test
 
 `pnpm test` compiles the TypeScript sources and runs the Node.js test suite. Generated files under `dist/` are intentionally ignored.
 
+Install the repository pre-push hook once per checkout to run the full validation suite before pushing:
+
+```bash
+pnpm run hooks:install
+```
+
+The hook runs `pnpm run validate`, which checks formatting, linting, types, and tests.
+
 ## Compatibility aliases
 
 `ai-router`, `airoute`, and `ai-route` remain available as command aliases for existing users. New documentation and integrations should use `airo`.
