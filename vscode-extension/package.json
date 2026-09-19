@@ -6,8 +6,21 @@
   "categories": [
     "Other"
   ],
+  "homepage": "https://github.com/pablospaniard/airo-cli#readme",
+  "bugs": {
+    "url": "https://github.com/pablospaniard/airo-cli/issues"
+  },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pablospaniard/airo-cli.git"
+  },
   "publisher": "pablospaniard",
+  "files": [
+    "LICENSE",
+    "media/**",
+    "out/**"
+  ],
   "main": "./out/extension.js",
   "scripts": {
     "compile": "tsc -p ./"
