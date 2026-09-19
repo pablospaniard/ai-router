@@ -158,6 +158,6 @@ export async function orchestrate(task: string, config: RouterConfig, options: {
   logger.status(`adaptive run ${runId} complete exit=${exitCode}`);
   if (finalExecution) logger.finalOutput(finalExecution.output);
   logger.status(`logs: ${logger.runDir}`);
-  logger.status(`rate: airoute feedback good ${runId}  |  airoute feedback bad ${runId}`);
+  logger.status(`rate: ai-router feedback good ${runId}  |  ai-router feedback bad ${runId}`);
   return { runId, phases: executions, exitCode };
 }

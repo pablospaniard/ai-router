@@ -1,4 +1,4 @@
-# subscription-ai-router v0.7.0
+# ai-router v0.7.0
 
 Local adaptive router/orchestrator for Claude Code and Codex CLI using existing subscription-backed logins.
 
@@ -38,9 +38,9 @@ Every run now streams progress and persists it under:
 Logging levels:
 
 ```bash
-airoute --log compact "task"
-airoute --log live "task"
-airoute --log verbose "task"
+ai-router --log compact "task"
+ai-router --log live "task"
+ai-router --log verbose "task"
 ```
 
 - `compact`: router/phase status only
@@ -50,19 +50,19 @@ airoute --log verbose "task"
 List recent log runs:
 
 ```bash
-airoute logs
+ai-router logs
 ```
 
 Print a run:
 
 ```bash
-airoute logs <run-id>
+ai-router logs <run-id>
 ```
 
 Follow a currently running or growing combined log:
 
 ```bash
-airoute logs --follow <run-id>
+ai-router logs --follow <run-id>
 ```
 
 The logger shows only output actually emitted by Claude Code/Codex and tool activity. It does not expose hidden chain-of-thought.
@@ -73,7 +73,7 @@ The logger shows only output actually emitted by Claude Code/Codex and tool acti
 npm install
 npm run build
 npm link
-airoute doctor
+ai-router doctor
 ```
 
 ## Development
@@ -87,25 +87,25 @@ The test command compiles the TypeScript sources and runs the built-in Node.js t
 ## Start a session
 
 ```bash
-airoute "review this PR for regressions"
+ai-router "review this PR for regressions"
 ```
 
 ## Follow up
 
 ```bash
-airoute --continue "fix the critical issue you found"
+ai-router --continue "fix the critical issue you found"
 ```
 
 Or continue an explicit session:
 
 ```bash
-airoute --session <session-id> "add tests for that fix"
+ai-router --session <session-id> "add tests for that fix"
 ```
 
 ## Interactive mode
 
 ```bash
-airoute chat
+ai-router chat
 ```
 
 Then type follow-ups naturally. Each turn can use a different provider/model.
@@ -113,10 +113,10 @@ Then type follow-ups naturally. Each turn can use a different provider/model.
 ## Session management
 
 ```bash
-airoute session
-airoute sessions
-airoute session new "new task"
-airoute session clear
+ai-router session
+ai-router sessions
+ai-router session new "new task"
+ai-router session clear
 ```
 
 Sessions are stored in `~/.local/share/ai-router/sessions/`. History remains in the existing history store.
@@ -124,8 +124,8 @@ Sessions are stored in `~/.local/share/ai-router/sessions/`. History remains in 
 ## Feedback
 
 ```bash
-airoute feedback good <runId>
-airoute feedback bad <runId> "too much reasoning"
+ai-router feedback good <runId>
+ai-router feedback bad <runId> "too much reasoning"
 ```
 
 
@@ -159,7 +159,7 @@ The CLI now uses ANSI colors when attached to a TTY, Unicode progress symbols (`
 On the first interactive run, AI Router launches a setup wizard automatically. You can also run it anytime with:
 
 ```bash
-airoute setup
+ai-router setup
 ```
 
 The wizard lets you select the Claude and Codex models the router is allowed to use, then map them to the `fast`, `balanced`, and `deep` tiers with per-tier effort levels.
@@ -167,7 +167,7 @@ The wizard lets you select the Claude and Codex models the router is allowed to 
 Inspect the active mapping with:
 
 ```bash
-airoute models
+ai-router models
 ```
 
 The global configuration is stored at:
@@ -176,6 +176,6 @@ The global configuration is stored at:
 ~/.config/ai-router/config.json
 ```
 
-The generated JSON includes a `_comment` reminding users to review or change the model list with `airoute setup` or by editing the config directly.
+The generated JSON includes a `_comment` reminding users to review or change the model list with `ai-router setup` or by editing the config directly.
 
 The entire CLI now uses a consistent ANSI color theme for providers, tiers, commands, status icons, sessions, logs, prompts, errors, and final answers. Set `NO_COLOR=1` to disable colors.

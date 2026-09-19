@@ -49,7 +49,7 @@ export async function runSetup(): Promise<string> {
   console.log(ui.bold(ui.cyan("╰────────────────────────────────────────────────────────╯")));
   console.log(`${statusIcon("info")} ${ui.bold("Choose models once; routing remains automatic afterwards.")}`);
   console.log(`${ui.gray("Config")} ${ui.cyan("~/.config/ai-router/config.json")}`);
-  console.log(`${ui.gray("Tip   ")} ${ui.yellow("Run `airoute setup` anytime to review or change this list.")}`);
+  console.log(`${ui.gray("Tip   ")} ${ui.yellow("Run `ai-router setup` anytime to review or change this list.")}`);
 
   const rl = readline.createInterface({input:process.stdin, output:process.stdout});
   try {
@@ -73,8 +73,8 @@ export async function runSetup(): Promise<string> {
     const file = writeGlobalConfig(config);
     console.log(""); console.log(divider("Setup complete"));
     console.log(`${statusIcon("ok")} ${ui.green("Saved")} ${ui.cyan(file)}`);
-    console.log(`${statusIcon("info")} ${ui.yellow("Review/modify later:")} ${ui.bold("airoute setup")} ${ui.gray("or edit the config file directly")}`);
-    console.log(`${statusIcon("info")} ${ui.gray("Inspect active mapping:")} ${ui.bold("airoute models")}`);
+    console.log(`${statusIcon("info")} ${ui.yellow("Review/modify later:")} ${ui.bold("ai-router setup")} ${ui.gray("or edit the config file directly")}`);
+    console.log(`${statusIcon("info")} ${ui.gray("Inspect active mapping:")} ${ui.bold("ai-router models")}`);
     return file;
   } finally { rl.close(); }
 }

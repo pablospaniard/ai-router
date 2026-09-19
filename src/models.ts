@@ -17,5 +17,5 @@ export function printModels() {
     }
   }
   console.log("");
-  console.log(`${ui.yellow("NOTE")} ${ui.dim("Run `airoute setup` to check or modify the model list.")}`);
+  console.log(`${ui.yellow("NOTE")} ${ui.dim("Run `ai-router setup` to check or modify the model list.")}`);
 }

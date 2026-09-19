@@ -3,7 +3,7 @@ import path from "node:path";
 import os from "node:os";
 import type { RouterConfig } from "./types.js";
 
-export const CONFIG_NOTE = "Review or change available models anytime with `airoute setup`, or edit this file directly.";
+export const CONFIG_NOTE = "Review or change available models anytime with `ai-router setup`, or edit this file directly.";
 
 export const DEFAULT_CONFIG: RouterConfig = {
   policy: "balanced",

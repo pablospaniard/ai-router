@@ -60,14 +60,14 @@ export class RunLogger {
   }
 
   private prettyStatus(message: string): string {
-    if (message.includes(" complete")) return `${ui.gray(nowTime())} ${statusIcon("ok")} ${ui.bold("airoute")} ${message}`;
-    if (message.includes("phase ") || message.includes("started")) return `${ui.gray(nowTime())} ${statusIcon("work")} ${ui.bold("airoute")} ${message}`;
-    if (message.includes("question") || message.includes("input")) return `${ui.gray(nowTime())} ${statusIcon("ask")} ${ui.bold("airoute")} ${ui.yellow(message)}`;
-    return `${ui.gray(nowTime())} ${statusIcon("info")} ${ui.bold("airoute")} ${message}`;
+    if (message.includes(" complete")) return `${ui.gray(nowTime())} ${statusIcon("ok")} ${ui.bold("ai-router")} ${message}`;
+    if (message.includes("phase ") || message.includes("started")) return `${ui.gray(nowTime())} ${statusIcon("work")} ${ui.bold("ai-router")} ${message}`;
+    if (message.includes("question") || message.includes("input")) return `${ui.gray(nowTime())} ${statusIcon("ask")} ${ui.bold("ai-router")} ${ui.yellow(message)}`;
+    return `${ui.gray(nowTime())} ${statusIcon("info")} ${ui.bold("ai-router")} ${message}`;
   }
 
   status(message: string) {
-    const line = `${nowTime()} [airoute] ${message}`;
+    const line = `${nowTime()} [ai-router] ${message}`;
     this.append(this.combinedPath, line);
     this.console(this.prettyStatus(message));
   }
@@ -129,7 +129,7 @@ export class RunLogger {
   }
 
   question(question: string) {
-    const line = `${nowTime()} [airoute][question] ${question}`;
+    const line = `${nowTime()} [ai-router][question] ${question}`;
     this.append(this.combinedPath, line);
     this.console("");
     this.console(divider("Input needed"));
@@ -141,7 +141,7 @@ export class RunLogger {
     if (!clean) return;
     const file = path.join(this.runDir, "final-output.txt");
     fs.writeFileSync(file, `${clean}\n`);
-    this.append(this.combinedPath, `${nowTime()} [airoute][final] ${clean.replace(/\n/g, "\n[final] ")}`);
+    this.append(this.combinedPath, `${nowTime()} [ai-router][final] ${clean.replace(/\n/g, "\n[final] ")}`);
 
     this.console("");
     this.console(divider("Final answer"));

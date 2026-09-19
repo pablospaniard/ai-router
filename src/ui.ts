@@ -14,7 +14,7 @@ export const ui = {
   white: (s: string) => wrap("\x1b[37m", "\x1b[39m", s),
 };
 
-export function brand(s = "airoute"): string { return ui.bold(ui.cyan(s)); }
+export function brand(s = "ai-router"): string { return ui.bold(ui.cyan(s)); }
 export function agentColor(agent: "claude" | "codex", s: string): string { return agent === "claude" ? ui.magenta(s) : ui.cyan(s); }
 export function tierColor(tier: string): string { return tier === "fast" ? ui.green(tier) : tier === "balanced" ? ui.yellow(tier) : ui.red(tier); }
 export function statusIcon(kind: "ok" | "error" | "work" | "ask" | "info"): string {

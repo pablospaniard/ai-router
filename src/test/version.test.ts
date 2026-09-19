@@ -9,5 +9,7 @@ test("keeps package and documented versions aligned", () => {
 
   assert.equal(VERSION, "0.7.0");
   assert.equal(packageJson.version, VERSION);
-  assert.match(readme, new RegExp(`^# subscription-ai-router v${VERSION.replaceAll(".", "\\.")}$`, "m"));
+  assert.equal(packageJson.name, "ai-router");
+  assert.equal(packageJson.bin["ai-router"], "./dist/cli.js");
+  assert.match(readme, new RegExp(`^# ai-router v${VERSION.replaceAll(".", "\\.")}$`, "m"));
 });

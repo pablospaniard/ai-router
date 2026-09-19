@@ -73,5 +73,5 @@
     "level": "live",
     "persist": true
   },
-  "_comment": "Review or change available models anytime with `airoute setup`, or edit this file directly."
+  "_comment": "Review or change available models anytime with `ai-router setup`, or edit this file directly."
 }

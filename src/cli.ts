@@ -22,28 +22,28 @@ function help() {
   console.log(`${brand()} ${ui.dim("adaptive subscription-backed Claude Code + Codex orchestrator")}`);
   console.log("");
   console.log(ui.bold("Core"));
-  console.log(`  ${commandColor('airoute "task"')}                         ${ui.gray("new logical session")}`);
-  console.log(`  ${commandColor('airoute --continue "follow-up"')}          ${ui.gray("continue active repo session")}`);
-  console.log(`  ${commandColor('airoute chat')}                            ${ui.gray("interactive follow-up mode")}`);
-  console.log(`  ${commandColor('airoute --adaptive "task"')}              ${ui.gray("force multi-phase orchestration")}`);
-  console.log(`  ${commandColor('airoute --single "task"')}                ${ui.gray("force one agent/model")}`);
+  console.log(`  ${commandColor('ai-router "task"')}                       ${ui.gray("new logical session")}`);
+  console.log(`  ${commandColor('ai-router --continue "follow-up"')}        ${ui.gray("continue active repo session")}`);
+  console.log(`  ${commandColor('ai-router chat')}                          ${ui.gray("interactive follow-up mode")}`);
+  console.log(`  ${commandColor('ai-router --adaptive "task"')}            ${ui.gray("force multi-phase orchestration")}`);
+  console.log(`  ${commandColor('ai-router --single "task"')}              ${ui.gray("force one agent/model")}`);
   console.log("");
   console.log(ui.bold("Models & setup"));
-  console.log(`  ${commandColor('airoute setup')}                           ${ui.gray("pick allowed models and tier mapping")}`);
-  console.log(`  ${commandColor('airoute models')}                          ${ui.gray("show active model mapping")}`);
-  console.log(`  ${commandColor('airoute doctor')}                          ${ui.gray("check providers and paths")}`);
+  console.log(`  ${commandColor('ai-router setup')}                         ${ui.gray("pick allowed models and tier mapping")}`);
+  console.log(`  ${commandColor('ai-router models')}                        ${ui.gray("show active model mapping")}`);
+  console.log(`  ${commandColor('ai-router doctor')}                        ${ui.gray("check providers and paths")}`);
   console.log("");
   console.log(ui.bold("Observability"));
-  console.log(`  ${commandColor('airoute logs [runId]')}                    ${ui.gray("show persisted logs")}`);
-  console.log(`  ${commandColor('airoute logs --follow [runId]')}           ${ui.gray("follow a run live")}`);
-  console.log(`  ${commandColor('airoute history [limit]')}                 ${ui.gray("show routing history")}`);
-  console.log(`  ${commandColor('airoute feedback good|bad ...')}           ${ui.gray("teach the router")}`);
+  console.log(`  ${commandColor('ai-router logs [runId]')}                  ${ui.gray("show persisted logs")}`);
+  console.log(`  ${commandColor('ai-router logs --follow [runId]')}         ${ui.gray("follow a run live")}`);
+  console.log(`  ${commandColor('ai-router history [limit]')}               ${ui.gray("show routing history")}`);
+  console.log(`  ${commandColor('ai-router feedback good|bad ...')}         ${ui.gray("teach the router")}`);
   console.log("");
   console.log(ui.bold("Sessions"));
-  console.log(`  ${commandColor('airoute session')}                         ${ui.gray("show active session")}`);
-  console.log(`  ${commandColor('airoute sessions')}                        ${ui.gray("list repo sessions")}`);
-  console.log(`  ${commandColor('airoute session new ["task"]')}          ${ui.gray("start fresh")}`);
-  console.log(`  ${commandColor('airoute session clear')}                   ${ui.gray("clear active session")}`);
+  console.log(`  ${commandColor('ai-router session')}                       ${ui.gray("show active session")}`);
+  console.log(`  ${commandColor('ai-router sessions')}                      ${ui.gray("list repo sessions")}`);
+  console.log(`  ${commandColor('ai-router session new ["task"]')}         ${ui.gray("start fresh")}`);
+  console.log(`  ${commandColor('ai-router session clear')}                 ${ui.gray("clear active session")}`);
   console.log("");
   console.log(`${statusIcon("info")} ${ui.dim("Follow-ups preserve session context but are re-routed independently.")}`);
   console.log(`${statusIcon("info")} ${ui.dim("Set NO_COLOR=1 to disable ANSI colors.")}`);
@@ -190,7 +190,7 @@ async function main() {
 
   if (!path && process.stdin.isTTY && !["setup","models","config"].includes(raw[0] ?? "") && !raw.includes("--help") && !raw.includes("-h")) {
     console.log(`${statusIcon("info")} ${brand()} ${ui.bold("first run detected")}`);
-    console.log(`${ui.gray("No config found. Starting model setup; you can rerun it anytime with")} ${commandColor("airoute setup")}.`);
+    console.log(`${ui.gray("No config found. Starting model setup; you can rerun it anytime with")} ${commandColor("ai-router setup")}.`);
     await runSetup();
     ({ config, path } = loadConfig());
   }
@@ -215,7 +215,7 @@ async function main() {
   }
   if (raw[0] === "feedback") {
     const rating = raw[1] as FeedbackRating;
-    if (!["good","bad"].includes(rating)) throw new Error("Use: airoute feedback good|bad [id|runId|last] [note]");
+    if (!["good","bad"].includes(rating)) throw new Error("Use: ai-router feedback good|bad [id|runId|last] [note]");
     const updated = setFeedback(config.history, rating, raw[2] ?? "last", raw.slice(3).join(" ") || undefined);
     console.log(`${statusIcon("ok")} ${brand()} ${ui.gray("feedback=")}${rating === "good" ? ui.green(rating) : ui.red(rating)} ${ui.gray("saved for")} ${ui.bold(String(updated.length))} ${ui.gray("item(s)")}`); return;
   }
@@ -259,7 +259,7 @@ async function main() {
   if (!args.task) { help(); process.exitCode = 2; return; }
   let session: SessionState | undefined;
   if (args.sessionId) { session = loadSession(args.sessionId); setActiveSession(process.cwd(), session.sessionId); }
-  else if (args.continueMode) { session = getActiveSession(); if (!session) throw new Error('No active session. Start with: airoute session new "task"'); }
+  else if (args.continueMode) { session = getActiveSession(); if (!session) throw new Error('No active session. Start with: ai-router session new "task"'); }
   else session = createSession(args.task);
   process.exitCode = await execute(args, session, config, path);
 }
