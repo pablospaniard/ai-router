@@ -6,20 +6,33 @@
   "categories": [
     "Other"
   ],
+  "homepage": "https://github.com/pablospaniard/airo-cli#readme",
+  "bugs": {
+    "url": "https://github.com/pablospaniard/airo-cli/issues"
+  },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pablospaniard/airo-cli.git"
+  },
   "publisher": "pablospaniard",
+  "files": [
+    "LICENSE",
+    "media/**",
+    "out/**"
+  ],
   "main": "./out/extension.js",
   "scripts": {
     "compile": "tsc -p ./"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
-    "@types/vscode": "^1.85.0",
+    "@types/vscode": "^1.106.0",
     "typescript": "^5.8.3"
   },
   "contributes": {
     "viewsContainers": {
-      "activitybar": [
+      "secondarySidebar": [
         {
           "id": "airo",
           "title": "AIRO",
@@ -109,6 +122,6 @@
     "onView:airo.sidebar"
   ],
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.106.0"
   }
 }

@@ -40,11 +40,12 @@
     "format:check": "oxfmt --check src vscode-extension/src package.json vscode-extension/package.json tsconfig.json vscode-extension/tsconfig.json",
     "lint": "oxlint --deny-warnings --tsconfig tsconfig.json src vscode-extension/src",
     "typecheck": "tsc --noEmit && tsc -p vscode-extension/tsconfig.json --noEmit",
-    "test": "npm run test:coverage",
-    "test:coverage": "npm run build && node --test --experimental-test-coverage --test-coverage-exclude=dist/test/** --test-coverage-lines=95 --test-coverage-functions=95 dist/test/*.test.js",
+    "test": "pnpm run test:coverage",
+    "test:coverage": "pnpm run build && node --test --experimental-test-coverage --test-coverage-exclude=dist/test/** --test-coverage-lines=95 --test-coverage-functions=95 dist/test/*.test.js",
     "start": "node dist/cli.js",
-    "validate": "npm run format:check && npm run lint && npm run typecheck && npm test",
-    "prepare": "npm run build"
+    "validate": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm test",
+    "hooks:install": "git config core.hooksPath .githooks",
+    "prepare": "pnpm run build"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
@@ -55,5 +56,6 @@
   },
   "engines": {
     "node": ">=22"
-  }
+  },
+  "packageManager": "pnpm@9.6.0"
 }
