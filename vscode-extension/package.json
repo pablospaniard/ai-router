@@ -1,0 +1,41 @@
+{
+  "name": "airo-vscode",
+  "displayName": "AIRO",
+  "description": "A full AIRO chat workspace in the VS Code sidebar.",
+  "version": "0.1.0",
+  "publisher": "pablospaniard",
+  "license": "MIT",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other"],
+  "activationEvents": ["onView:airo.sidebar", "onCommand:airo.runTask", "onCommand:airo.openTerminal", "onCommand:airo.openSettings"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [{ "id": "airo", "title": "AIRO", "icon": "media/airo.svg" }]
+    },
+    "views": {
+      "airo": [{ "type": "webview", "id": "airo.sidebar", "name": "AIRO" }]
+    },
+    "commands": [
+      { "command": "airo.runTask", "title": "AIRO: Run Task" },
+      { "command": "airo.openTerminal", "title": "AIRO: Open Terminal" },
+      { "command": "airo.openSettings", "title": "AIRO: Open Settings" }
+    ],
+    "configuration": {
+      "title": "AIRO",
+      "properties": {
+        "airo.command": { "type": "string", "default": "airo", "description": "AIRO executable to invoke. Use an executable path, without shell arguments." },
+        "airo.mode": { "type": "string", "enum": ["auto", "adaptive", "single"], "default": "auto", "description": "Routing workflow for sidebar tasks." },
+        "airo.agent": { "type": "string", "enum": ["auto", "claude", "codex"], "default": "auto", "description": "Provider to use for sidebar tasks." },
+        "airo.tier": { "type": "string", "enum": ["auto", "fast", "balanced", "deep"], "default": "auto", "description": "Model tier for sidebar tasks." },
+        "airo.logLevel": { "type": "string", "enum": ["compact", "live", "verbose"], "default": "compact", "description": "AIRO output detail shown for sidebar tasks." }
+      }
+    }
+  },
+  "scripts": { "compile": "tsc -p ./" },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.8.3"
+  }
+}

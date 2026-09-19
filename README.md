@@ -59,6 +59,10 @@ request → route → analyze → implement → test → review
    airo "review this PR for regressions"
    ```
 
+### VS Code sidebar (preview)
+
+The repository includes a VS Code extension in [`vscode-extension`](vscode-extension). Open that folder in VS Code, run `npm install`, then press `F5` to launch an Extension Development Host. Its activity-bar view is a stateful AIRO chat: send follow-ups in the active repository session, attach supported local files, start chats, and use visual controls for models, accounts, usage, logs, diagnostics, and feedback. Configure the executable, routing mode, provider, tier, and output detail under VS Code’s **AIRO** extension settings.
+
 AIRO can fall back to the available provider during adaptive runs when one CLI is missing. Run `airo setup` at any time to revisit the model choices.
 
 ## Common workflows
