@@ -31,7 +31,7 @@ AIRO can fall back to the available provider during adaptive runs when one CLI i
 ## Install
 
 ```bash
-npm install --global @pablospaniard/airo-cli
+npm install --global airo-cli
 airo doctor
 ```
 
