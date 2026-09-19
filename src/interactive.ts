@@ -22,7 +22,7 @@ export type InteractiveAction =
   | { kind: "usage"; limit?: number }
   | { kind: "logs" }
   | { kind: "attach"; path: string }
-  | { kind: "feedback"; rating: FeedbackRating; target?: string; note?: string }
+  | { kind: "feedback"; rating: FeedbackRating; note?: string }
   | { kind: "clear" }
   | { kind: "set-mode"; value: InteractiveMode }
   | { kind: "set-agent"; value: "auto" | Agent }
@@ -74,8 +74,8 @@ export function parseInteractiveInput(input: string): InteractiveAction {
     return path ? { kind: "attach", path } : { kind: "error", message: "Usage: /attach <file-path>" };
   }
   if (command === "/feedback") {
-    if (first !== "good" && first !== "bad") return { kind: "error", message: "Usage: /feedback good|bad [id|runId|last] [note]" };
-    return { kind: "feedback", rating: first, target: args[1], note: args.slice(2).join(" ") || undefined };
+    if (first !== "good" && first !== "bad") return { kind: "error", message: "Usage: /feedback good|bad [note]" };
+    return { kind: "feedback", rating: first, note: args.slice(1).join(" ") || undefined };
   }
   if (command === "/clear") return { kind: "clear" };
   if (command === "/new") return { kind: "new", title: args.join(" ").trim() || undefined };

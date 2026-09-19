@@ -216,14 +216,14 @@ airo usage 20
 Teach the router from a completed run:
 
 ```bash
-airo feedback good <run-id>
-airo feedback bad <run-id> "used more reasoning than necessary"
+airo feedback good
+airo feedback bad "used more reasoning than necessary"
 ```
 
 After a completed run, AIRO continues straight to the next prompt and shows an optional feedback command:
 
 ```text
-ⓘ optional feedback: /feedback good last  |  /feedback bad last
+ⓘ optional feedback: /feedback good  |  /feedback bad
 ```
 
 Use `good` to record positive feedback or `bad` to record negative feedback. Disable `history.learningEnabled` to turn off feedback-based routing adjustments.
@@ -288,7 +288,7 @@ Claude runs use `permissionMode: "acceptEdits"` by default so headless implement
 | `airo logs [run-id]` / `airo logs --follow <run-id>` | List, print, or follow persisted run logs. |
 | `airo history [limit]` | Show recent routing history. |
 | `airo usage [limit]` | Show provider-reported tokens and the historical default-model comparison. |
-| `airo feedback <good\|bad> [id\|run-id\|last] [note]` | Teach the router from a completed run. |
+| `airo feedback <good\|bad> [note]` | Teach the router from the latest completed run. |
 | `airo --help` / `airo --version` | Show help or the installed version. |
 
 Set `NO_COLOR=1` to disable ANSI colors.

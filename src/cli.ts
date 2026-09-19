@@ -103,11 +103,11 @@ async function askTerminal(question: string): Promise<string> {
   }
 }
 
-function showFeedbackOption(runId: string, config: any, interactive: boolean): void {
+function showFeedbackOption(config: any, interactive: boolean): void {
   if (!config.history.enabled) return;
   const command = interactive
-    ? "/feedback good last  |  /feedback bad last"
-    : `airo feedback good ${runId}  |  airo feedback bad ${runId}`;
+    ? "/feedback good  |  /feedback bad"
+    : "airo feedback good  |  airo feedback bad";
   console.log(`${statusIcon("info")} ${ui.gray("optional feedback:")} ${commandColor(command)}`);
 }
 
@@ -188,7 +188,7 @@ async function execute(args: ReturnType<typeof parseArgs>, session: SessionState
       routeSummary: result.phases.map(p => `${p.phase.kind}:${p.route.agent}/${p.route.model}`).join(" → "),
       phaseSummaries: result.phases.map(p => `${p.phase.kind} exit=${p.exitCode}; ${p.output.replace(/\s+/g," ").slice(-400)}`)
     });
-    if (!args.dryRun) showFeedbackOption(result.runId, config, Boolean(session));
+    if (!args.dryRun) showFeedbackOption(config, Boolean(session));
     return result.exitCode;
   }
   const r = await singleRun(args, config, path, session, askUser);
@@ -196,7 +196,7 @@ async function execute(args: ReturnType<typeof parseArgs>, session: SessionState
     turnId: r.runId + "-turn", runId: r.runId, timestamp: new Date().toISOString(), userPrompt: args.task,
     routeSummary: r.summaries[0] ?? "single", phaseSummaries: r.summaries
   });
-  if (!args.dryRun) showFeedbackOption(r.runId, config, Boolean(session));
+  if (!args.dryRun) showFeedbackOption(config, Boolean(session));
   return r.exitCode;
 }
 
@@ -232,7 +232,7 @@ function interactiveHelp(): string {
     `${commandColor("/usage [limit]")}      ${ui.gray("show token usage")}`,
     `${commandColor("/logs")}               ${ui.gray("show recent run logs")}`,
     `${commandColor("/attach <file-path>")} ${ui.gray("attach a local image, PDF, Markdown, or JSON file to the next task")}`,
-    `${commandColor("/feedback good|bad [id|runId|last] [note]")} ${ui.gray("save run feedback")}`,
+    `${commandColor("/feedback good|bad [note]")} ${ui.gray("save feedback for the latest run")}`,
     `${commandColor("/sessions")}           ${ui.gray("list repository sessions")}`,
     `${commandColor("/clear")}              ${ui.gray("clear the screen")}`,
     `${commandColor("/exit")}               ${ui.gray("exit interactive mode")}`,
@@ -300,7 +300,7 @@ async function chatLoop(config: any, path?: string) {
         continue;
       }
       if (action.kind === "feedback") {
-        const updated = setFeedback(config.history, action.rating, action.target ?? "last", action.note);
+        const updated = setFeedback(config.history, action.rating, undefined, action.note);
         console.log(`${statusIcon("ok")} ${ui.gray("feedback saved for")} ${ui.bold(String(updated.length))} ${ui.gray("item(s)")}`);
         continue;
       }
@@ -438,8 +438,8 @@ async function main() {
   }
   if (raw[0] === "feedback") {
     const rating = raw[1] as FeedbackRating;
-    if (!["good","bad"].includes(rating)) throw new Error("Use: airo feedback good|bad [id|runId|last] [note]");
-    const updated = setFeedback(config.history, rating, raw[2] ?? "last", raw.slice(3).join(" ") || undefined);
+    if (!["good","bad"].includes(rating)) throw new Error("Use: airo feedback good|bad [note]");
+    const updated = setFeedback(config.history, rating, undefined, raw.slice(2).join(" ") || undefined);
     console.log(`${statusIcon("ok")} ${brand()} ${ui.gray("feedback=")}${rating === "good" ? ui.green(rating) : ui.red(rating)} ${ui.gray("saved for")} ${ui.bold(String(updated.length))} ${ui.gray("item(s)")}`); return;
   }
   if (raw[0] === "config" && raw[1] === "init") { console.log(`${statusIcon("ok")} ${ui.green("Created")} ${ui.cyan(writeProjectConfig())}`); return; }
