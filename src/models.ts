@@ -9,7 +9,7 @@ export function printModels() {
   for (const agent of ["claude","codex"] as const) {
     console.log("");
     console.log(`${statusIcon("info")} ${ui.bold(agentColor(agent, agent.toUpperCase()))}`);
-    console.log(`  ${ui.gray("allowed")} ${ui.bold((config[agent].allowedModels ?? []).join(" · "))}`);
+    console.log(`  ${ui.gray("access ")} ${ui.bold("all provider models")}`);
     for (const tier of ["fast","balanced","deep"] as const) {
       const p = config[agent].models[tier];
       const label = tier === "fast" ? ui.green(tier.padEnd(18)) : tier === "balanced" ? ui.yellow(tier.padEnd(18)) : ui.red(tier.padEnd(18));
@@ -17,5 +17,5 @@ export function printModels() {
     }
   }
   console.log("");
-  console.log(`${ui.yellow("NOTE")} ${ui.dim("Run `airo setup` to check or modify the model list.")}`);
+  console.log(`${ui.yellow("NOTE")} ${ui.dim("These three tiers are automatic defaults. Use `--model` or name a model in your task to override them.")}`);
 }

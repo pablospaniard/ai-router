@@ -87,7 +87,7 @@ The default Codex mapping is:
 | `balanced` | `gpt-5.6-terra` | `medium` |
 | `deep` | `gpt-5.6-sol` | `xhigh` |
 
-Use `airo models` to inspect the active Claude and Codex mappings.
+Use `airo models` to inspect the active Claude and Codex mappings. These three tiers per provider are automatic routing defaults, not an allowlist: every model exposed by the installed provider CLI remains available. Override a default with `--model`, optionally with `--agent`, or ask for a recognizable model ID directly in the task (for example, `airo "use gpt-6-astra to review this"`).
 
 Inspect the subscription/login context and the locally configured provider defaults:
 
@@ -193,7 +193,7 @@ This creates `.airo.json` in the current directory. Project configuration takes 
 
 On the first command after upgrading, AIRO copies legacy global configuration and data into `~/.config/airo/` and `~/.local/share/airo/`. The old files remain untouched as a rollback path. Project-level `.ai-router.json` files continue to be discovered.
 
-Claude runs use `permissionMode: "acceptEdits"` by default so headless implementation tasks can edit the working tree. Change it to `auto`, `manual`, `dontAsk`, or `plan` in configuration when a more restrictive mode is appropriate. Model IDs must appear in the provider's `allowedModels` list.
+Claude runs use `permissionMode: "acceptEdits"` by default so headless implementation tasks can edit the working tree. Change it to `auto`, `manual`, `dontAsk`, or `plan` in configuration when a more restrictive mode is appropriate. The legacy `allowedModels` setting is accepted for configuration compatibility but no longer restricts model access.
 
 ## Command reference
 
@@ -205,7 +205,7 @@ Claude runs use `permissionMode: "acceptEdits"` by default so headless implement
 | `airo chat` | Start interactive mode |
 | `airo --single "task"` | Force a single-agent run |
 | `airo --adaptive "task"` | Force multi-phase orchestration |
-| `airo setup` | Configure allowed models and tiers |
+| `airo setup` | Configure the three automatic model tiers |
 | `airo models` | Show the active model mapping |
 | `airo account` | Show provider login status and detected default models |
 | `airo doctor` | Check provider commands and storage paths |

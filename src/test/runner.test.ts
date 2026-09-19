@@ -6,7 +6,7 @@ import test from "node:test";
 import { DEFAULT_CONFIG } from "../config.js";
 import { RunLogger } from "../logging.js";
 import { routeTask } from "../router.js";
-import { addTokenUsage, assertAllowedModel, claudeProgress, codexProgress, commandExists, commandVersion, extractQuestion, isApprovalAnswer, progressFor, runAgent } from "../runner.js";
+import { addTokenUsage, claudeProgress, codexProgress, commandExists, commandVersion, extractQuestion, isApprovalAnswer, progressFor, runAgent } from "../runner.js";
 
 test("extracts explicit and permission-blocked clarification questions", () => {
   assert.equal(extractQuestion("AIROUTE_QUESTION: Which database should I use?"), "Which database should I use?");
@@ -102,13 +102,6 @@ test("uses the latest completed Codex agent message as the result candidate", ()
   assert.equal(final.candidateOutput, "Committed successfully.");
 });
 
-test("rejects models outside the configured allowlist", () => {
-  const route = routeTask("rename this type", structuredClone(DEFAULT_CONFIG));
-  route.model = "unapproved-model";
-
-  assert.throws(() => assertAllowedModel(route, DEFAULT_CONFIG), /not allowed/);
-});
-
 test("returns only Claude's result event from a structured run", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-runner-"));
   const command = path.join(dir, "mock-claude");
@@ -198,7 +191,7 @@ process.stderr.write("diagnostic\\n");
   }
 });
 
-test("supports plain captured and inherited provider execution", async () => {
+test("supports unrestricted models with legacy allowlists and plain provider execution", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-runner-plain-"));
   const command = path.join(dir, "mock-codex");
   fs.writeFileSync(command, "#!/bin/sh\nprintf plain-output\nprintf diagnostic >&2\nexit 0\n");
@@ -206,9 +199,10 @@ test("supports plain captured and inherited provider execution", async () => {
   try {
     const config = structuredClone(DEFAULT_CONFIG);
     config.codex.command = command;
+    config.codex.allowedModels = ["gpt-5.6-luna"];
     const route = routeTask("rename type", config);
     route.agent = "codex";
-    route.model = config.codex.models.fast.model;
+    route.model = "gpt-6-astra";
     route.modelTier = "fast";
     assert.equal((await runAgent(route, "prompt", config, { capture: true })).output, "plain-output");
     assert.equal((await runAgent(route, "prompt", config)).exitCode, 0);

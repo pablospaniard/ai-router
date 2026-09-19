@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { DEFAULT_CONFIG } from "../config.js";
 import { applyPhasePreference, needsRecovery, planPhases, shouldOrchestrate } from "../orchestrator.js";
-import { requestedModelTier, routeTask } from "../router.js";
+import { agentForModel, requestedModel, requestedModelTier, routeTask } from "../router.js";
 import type { RouterConfig } from "../types.js";
 
 function config(overrides: Partial<RouterConfig> = {}): RouterConfig {
@@ -45,6 +45,36 @@ test("honors an explicit request for the most powerful model", () => {
 
 test("does not mistake a negative model instruction for a deep-tier request", () => {
   assert.equal(requestedModelTier("do not use the most powerful model"), undefined);
+});
+
+test("routes explicit models outside the automatic tier defaults", () => {
+  const current = config();
+  const codex = routeTask("use gpt-6-astra and tell me the time", current);
+  const claude = routeTask("please use claude-opus-5 for this review", current);
+
+  assert.deepEqual(requestedModel("use gpt-6-astra", current), { agent: "codex", model: "gpt-6-astra" });
+  assert.equal(agentForModel("sonnet", current), "claude");
+  assert.equal(agentForModel("o3", current), "codex");
+  assert.equal(agentForModel("unknown-model", current), undefined);
+  assert.equal(requestedModel("use GPT for this task", current), undefined);
+  assert.equal(codex.agent, "codex");
+  assert.equal(codex.model, "gpt-6-astra");
+  assert.equal(codex.userRequestedModel, "gpt-6-astra");
+  assert.equal(claude.agent, "claude");
+  assert.equal(claude.model, "claude-opus-5");
+});
+
+test("preserves an explicit model through adaptive phase preferences", () => {
+  const current = config();
+  const route = routeTask("use gpt-6-astra to review the architecture", current);
+  const phaseRoute = applyPhasePreference(route, planPhases("review the architecture", current)[0], current);
+
+  assert.equal(phaseRoute.agent, "codex");
+  assert.equal(phaseRoute.model, "gpt-6-astra");
+});
+
+test("ignores negated explicit model requests", () => {
+  assert.equal(requestedModel("do not use gpt-6-astra for this", config()), undefined);
 });
 
 test("applies the first matching custom routing rule", () => {

@@ -3,7 +3,7 @@ import path from "node:path";
 import os from "node:os";
 import type { RouterConfig } from "./types.js";
 
-export const CONFIG_NOTE = "Review or change available models anytime with `airo setup`, or edit this file directly.";
+export const CONFIG_NOTE = "AIRO can use any model exposed by each provider; run `airo setup` to change the three automatic tier defaults.";
 
 export const DEFAULT_CONFIG: RouterConfig = {
   policy: "balanced",
@@ -12,7 +12,6 @@ export const DEFAULT_CONFIG: RouterConfig = {
     command: "claude",
     args: [],
     permissionMode: "acceptEdits",
-    allowedModels: ["haiku", "sonnet", "opus"],
     models: {
       fast: { model: "haiku", effort: "low" },
       balanced: { model: "sonnet", effort: "medium" },
@@ -22,7 +21,6 @@ export const DEFAULT_CONFIG: RouterConfig = {
   codex: {
     command: "codex",
     args: [],
-    allowedModels: ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"],
     models: {
       fast: { model: "gpt-5.6-luna", effort: "low" },
       balanced: { model: "gpt-5.6-terra", effort: "medium" },

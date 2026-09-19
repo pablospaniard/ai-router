@@ -208,13 +208,6 @@ export function progressFor(agent: Agent, event: any): ParsedProviderEvent {
   return agent === "claude" ? claudeProgress(event) : codexProgress(event);
 }
 
-export function assertAllowedModel(route: RouteResult, config: RouterConfig): void {
-  const allowed = config[route.agent].allowedModels ?? [];
-  if (allowed.length && !allowed.includes(route.model)) {
-    throw new Error(`Model ${route.model} is not allowed for ${route.agent}. Run \`airo setup\` or update allowedModels.`);
-  }
-}
-
 export async function runAgent(
   route: RouteResult,
   prompt: string,
@@ -222,7 +215,6 @@ export async function runAgent(
   options: { headless?: boolean; capture?: boolean; logger?: RunLogger; logMeta?: PhaseLogMeta; permissionMode?: RouterConfig["claude"]["permissionMode"] } = {}
 ): Promise<AgentRunResult> {
   const provider = config[route.agent];
-  assertAllowedModel(route, config);
   const headless = options.headless ?? false;
   const capture = options.capture ?? false;
   const structuredProgress = Boolean(options.logger && headless);

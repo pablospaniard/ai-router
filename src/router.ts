@@ -48,11 +48,31 @@ function effortForTier(tier: ModelTier): Effort {
 
 const MOST_POWERFUL_MODEL = /\b(?:use|using|choose|pick|select|with)\s+(?:the\s+)?(?:most\s+(?:powerful|powerfull|capable)|strongest)\s+(?:available\s+)?model\b/i;
 const AVOID_MOST_POWERFUL_MODEL = /\b(?:do\s+not|don't|never|avoid)\s+use\s+(?:the\s+)?(?:most\s+(?:powerful|powerfull|capable)|strongest)\s+(?:available\s+)?model\b/i;
+const EXPLICIT_MODEL = /\b(?:use|using|choose|pick|select|with|model)\s+(?:the\s+)?["'`]?((?:(?:gpt|codex|claude)[-._][a-z0-9][-._a-z0-9]*|o[1-9](?:[-._][a-z0-9][-._a-z0-9]*)?|haiku|sonnet|opus))["'`]?\b/i;
 
 export function requestedModelTier(task: string): ModelTier | undefined {
   if (AVOID_MOST_POWERFUL_MODEL.test(task)) return undefined;
   if (MOST_POWERFUL_MODEL.test(task)) return "deep";
   return undefined;
+}
+
+export function agentForModel(model: string, config: RouterConfig): Agent | undefined {
+  for (const agent of ["claude", "codex"] as const) {
+    if (Object.values(config[agent].models).some(profile => profile.model.toLowerCase() === model.toLowerCase())) return agent;
+  }
+  if (/^(?:claude(?:-|$)|haiku$|sonnet$|opus$)/i.test(model)) return "claude";
+  if (/^(?:gpt(?:-|$)|codex(?:-|$)|o[1-9](?:-|$))/i.test(model)) return "codex";
+  return undefined;
+}
+
+export function requestedModel(task: string, config: RouterConfig): { agent: Agent; model: string } | undefined {
+  const match = EXPLICIT_MODEL.exec(task);
+  if (!match) return undefined;
+  const prefix = task.slice(Math.max(0, match.index - 16), match.index);
+  if (/(?:do\s+not|don't|never|avoid)\s*$/i.test(prefix)) return undefined;
+  const model = match[1];
+  const agent = agentForModel(model, config);
+  return agent ? { agent, model } : undefined;
 }
 
 export function routeTask(task: string, config: RouterConfig): RouteResult {
@@ -63,6 +83,7 @@ export function routeTask(task: string, config: RouterConfig): RouteResult {
   let forcedEffort: Effort | undefined;
   let matchedRule: string | undefined;
   const userRequestedTier = requestedModelTier(task);
+  const explicitModel = requestedModel(task, config);
 
   for (const rule of config.rules) {
     try {
@@ -96,7 +117,7 @@ export function routeTask(task: string, config: RouterConfig): RouteResult {
 
   const claudeScore = reasons.filter(r => r.agent === "claude").reduce((s, r) => s + r.points, 0);
   const codexScore = reasons.filter(r => r.agent === "codex").reduce((s, r) => s + r.points, 0);
-  const agent = forcedAgent ?? (claudeScore === codexScore ? config.defaultAgent : claudeScore > codexScore ? "claude" : "codex");
+  const agent = explicitModel?.agent ?? forcedAgent ?? (claudeScore === codexScore ? config.defaultAgent : claudeScore > codexScore ? "claude" : "codex");
 
   let complexity = 2;
   if (words >= 20) complexity += 1;
@@ -120,9 +141,11 @@ export function routeTask(task: string, config: RouterConfig): RouteResult {
   const effort = forcedEffort ?? profile.effort ?? effortForTier(modelTier);
   modelReasons.unshift(`complexity ${complexity}/5 → ${modelTier} tier`);
   if (userRequestedTier) modelReasons.unshift(`user explicitly requested the most powerful model → ${userRequestedTier} tier`);
+  if (explicitModel) modelReasons.unshift(`user explicitly requested ${explicitModel.model}`);
 
   return {
-    agent, modelTier, userRequestedTier, model: profile.model, effort, complexity,
+    agent, modelTier, userRequestedTier, userRequestedModel: explicitModel?.model,
+    model: explicitModel?.model ?? profile.model, effort, complexity,
     claudeScore, codexScore, reasons, modelReasons, matchedRule
   };
 }

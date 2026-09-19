@@ -19,12 +19,7 @@
         "model": "opus",
         "effort": "high"
       }
-    },
-    "allowedModels": [
-      "haiku",
-      "sonnet",
-      "opus"
-    ]
+    }
   },
   "codex": {
     "command": "codex",
@@ -43,12 +38,7 @@
         "model": "gpt-5.6-sol",
         "effort": "xhigh"
       }
-    },
-    "allowedModels": [
-      "gpt-5.6-luna",
-      "gpt-5.6-terra",
-      "gpt-5.6-sol"
-    ]
+    }
   },
   "history": {
     "enabled": true,
@@ -76,5 +66,5 @@
     "level": "live",
     "persist": true
   },
-  "_comment": "Review or change available models anytime with `airo setup`, or edit this file directly."
+  "_comment": "AIRO can use any model exposed by each provider; run `airo setup` to change the three automatic tier defaults."
 }

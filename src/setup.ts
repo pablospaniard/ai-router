@@ -15,7 +15,7 @@ function parseSelection(input: string, max: number): number[] {
 async function pickModels(rl: any, agent: Agent, candidates: string[], current: string[]): Promise<string[]> {
   console.log("");
   console.log(divider(`${agentColor(agent, agent.toUpperCase())} models`));
-  console.log(ui.dim("Select every model this router is allowed to use."));
+  console.log(ui.dim("Choose which models are available when mapping the three automatic tiers."));
   candidates.forEach((m, i) => {
     const selected = current.includes(m);
     console.log(`  ${selected ? statusIcon("ok") : ui.gray("○")} ${ui.cyan(String(i + 1).padStart(2))}  ${ui.bold(m)}`);
@@ -48,23 +48,31 @@ export async function runSetup(): Promise<string> {
   console.log(ui.bold(ui.cyan("╭────────────────────────────────────────────────────────╮")));
   console.log(ui.bold(ui.cyan("│                    AIRO SETUP                         │")));
   console.log(ui.bold(ui.cyan("╰────────────────────────────────────────────────────────╯")));
-  console.log(`${statusIcon("info")} ${ui.bold("Choose models once; routing remains automatic afterwards.")}`);
+  console.log(`${statusIcon("info")} ${ui.bold("Choose three automatic defaults; explicit requests can use any provider model.")}`);
   console.log(`${ui.gray("Config")} ${ui.cyan("~/.config/airo/config.json")}`);
   console.log(`${ui.gray("Tip   ")} ${ui.yellow("Run `airo setup` anytime to review or change this list.")}`);
 
   const rl = readline.createInterface({input:process.stdin, output:process.stdout});
   try {
-    const claudeCandidates = [...new Set([...(DEFAULT_CONFIG.claude.allowedModels ?? []), ...(config.claude.allowedModels ?? [])])];
-    const codexCandidates = [...new Set([...(DEFAULT_CONFIG.codex.allowedModels ?? []), ...(config.codex.allowedModels ?? [])])];
-    config.claude.allowedModels = await pickModels(rl, "claude", claudeCandidates, config.claude.allowedModels ?? claudeCandidates);
-    config.codex.allowedModels = await pickModels(rl, "codex", codexCandidates, config.codex.allowedModels ?? codexCandidates);
+    const candidatesFor = (agent: Agent) => [...new Set([
+      ...Object.values(DEFAULT_CONFIG[agent].models).map(profile => profile.model),
+      ...Object.values(config[agent].models).map(profile => profile.model),
+      ...(config[agent].allowedModels ?? []),
+    ])];
+    const claudeCandidates = candidatesFor("claude");
+    const codexCandidates = candidatesFor("codex");
+    const claudeModels = await pickModels(rl, "claude", claudeCandidates, claudeCandidates);
+    const codexModels = await pickModels(rl, "codex", codexCandidates, codexCandidates);
+    delete config.claude.allowedModels;
+    delete config.codex.allowedModels;
 
     console.log(""); console.log(divider("Tier mapping"));
     console.log(ui.dim("Map your selected models to fast / balanced / deep."));
     for (const agent of ["claude","codex"] as const) {
       console.log(""); console.log(ui.bold(agentColor(agent, agent.toUpperCase())));
       for (const tier of ["fast","balanced","deep"] as const) {
-        config[agent].models[tier] = await pickTier(rl, agent, tier, config[agent].allowedModels ?? [], config[agent].models[tier]);
+        const candidates = agent === "claude" ? claudeModels : codexModels;
+        config[agent].models[tier] = await pickTier(rl, agent, tier, candidates, config[agent].models[tier]);
       }
     }
 

@@ -7,7 +7,7 @@ import { runSetup } from "./setup.js";
 import { printModels } from "./models.js";
 import { appendHistory, historyPath, newHistoryId, readHistory, setFeedback } from "./history.js";
 import { orchestrate, planPhases, shouldOrchestrate } from "./orchestrator.js";
-import { routeTask } from "./router.js";
+import { agentForModel, routeTask } from "./router.js";
 import { addTokenUsage, commandExists, commandVersion, isApprovalAnswer, runAgent } from "./runner.js";
 import { appendTurn, clearActiveSession, createSession, getActiveSession, listSessions, loadSession, setActiveSession } from "./session.js";
 import { findRunLogs, followFile, logsRoot, recentRunDirs, RunLogger } from "./logging.js";
@@ -36,7 +36,7 @@ function help() {
   console.log(`  ${commandColor('airo --single "task"')}                   ${ui.gray("force one agent/model")}`);
   console.log("");
   console.log(ui.bold("Models & setup"));
-  console.log(`  ${commandColor('airo setup')}                              ${ui.gray("pick allowed models and tier mapping")}`);
+  console.log(`  ${commandColor('airo setup')}                              ${ui.gray("configure the three automatic model tiers")}`);
   console.log(`  ${commandColor('airo models')}                             ${ui.gray("show active model mapping")}`);
   console.log(`  ${commandColor('airo doctor')}                             ${ui.gray("check providers and paths")}`);
   console.log(`  ${commandColor('airo account')}                            ${ui.gray("show provider login and default models")}`);
@@ -123,6 +123,13 @@ async function collectRunFeedback(runId: string, config: any, askFeedback: () =>
 
 async function singleRun(args: ReturnType<typeof parseArgs>, config: any, path: string | undefined, session?: SessionState, askUser: (question: string) => Promise<string> = askTerminal) {
   let routed = routeTask(args.task, config);
+  if (args.agent === "auto" && args.model) {
+    const inferredAgent = agentForModel(args.model, config);
+    if (inferredAgent && inferredAgent !== routed.agent) {
+      routed.agent = inferredAgent;
+      routed.effort = args.effort ?? config[inferredAgent].models[routed.modelTier].effort ?? routed.effort;
+    }
+  }
   if (args.agent !== "auto") {
     routed.agent = args.agent;
     const profile = config[routed.agent].models[args.tier ?? routed.modelTier];

@@ -64,14 +64,14 @@ function tail(s: string, n: number): string {
 
 export function applyPhasePreference(base: RouteResult, p: PhasePlan, config: RouterConfig): RouteResult {
   const route = { ...base, reasons: [...base.reasons], modelReasons: [...base.modelReasons] };
-  if (p.preferredAgent) {
+  if (p.preferredAgent && !route.userRequestedModel) {
     route.agent = p.preferredAgent;
     route.reasons.push({ agent: p.preferredAgent, points: 20, reason: `phase ${p.kind} preference` });
   }
-  if (p.preferredTier && !route.userRequestedTier) route.modelTier = p.preferredTier;
+  if (p.preferredTier && !route.userRequestedTier && !route.userRequestedModel) route.modelTier = p.preferredTier;
   const profile = config[route.agent].models[route.modelTier];
-  route.model = profile.model;
-  route.effort = route.userRequestedTier
+  if (!route.userRequestedModel) route.model = profile.model;
+  route.effort = route.userRequestedTier || route.userRequestedModel
     ? profile.effort ?? route.effort
     : p.preferredEffort ?? profile.effort ?? route.effort;
   route.modelReasons.push(`phase ${p.kind} → ${route.agent}/${route.modelTier}`);

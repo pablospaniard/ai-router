@@ -26,6 +26,7 @@ export interface ProviderConfig {
   /** Optional override used when the provider CLI's default model cannot be detected. */
   defaultModel?: string;
   permissionMode?: "acceptEdits" | "auto" | "bypassPermissions" | "manual" | "dontAsk" | "plan";
+  /** @deprecated Retained for configuration compatibility; model access is unrestricted. */
   allowedModels?: string[];
   models: Record<ModelTier, ModelProfile>;
 }
@@ -72,6 +73,7 @@ export interface RouteResult {
   agent: Agent;
   modelTier: ModelTier;
   userRequestedTier?: ModelTier;
+  userRequestedModel?: string;
   model: string;
   effort: Effort;
   complexity: number;
