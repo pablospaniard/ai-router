@@ -10,11 +10,8 @@
   <a href="https://www.npmjs.com/package/airo-cli"><img src="https://img.shields.io/npm/v/airo-cli?logo=npm&label=npm" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/airo-cli"><img src="https://img.shields.io/npm/dm/airo-cli?logo=npm&label=downloads" alt="npm downloads"></a>
   <a href="https://github.com/pablospaniard/airo-cli/actions/workflows/ci.yml"><img src="https://github.com/pablospaniard/airo-cli/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/pablospaniard/airo-cli/blob/main/LICENSE"><img src="https://img.shields.io/github/license/pablospaniard/airo-cli" alt="License"></a>
-</p>
-
-<p align="center">
-  <a href="https://github.com/sponsors/pablospaniard"><img src="https://img.shields.io/badge/buy%20me%20a%20coffee-FFFFFF?style=for-the-badge&logo=GitHub-Sponsors&logoColor=EA4AAA" alt="Buy me a coffee"></a>
+  <a href="https://github.com/pablospaniard/airo-cli/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"></a>
+  <a href="https://github.com/sponsors/pablospaniard"><img src="https://img.shields.io/badge/sponsor-GitHub-EA4AAA?logo=githubsponsors&logoColor=white" alt="Sponsor on GitHub"></a>
 </p>
 
 AIRO accepts a task, chooses the right provider and model tier, and can coordinate a multi-phase workflow across agents. It runs locally with your existing CLI logins—no separate model API keys or proxy service required.
@@ -59,7 +56,7 @@ request → route → analyze → implement → test → review
 
 ### VS Code sidebar (preview)
 
-The repository includes a VS Code extension in [`vscode-extension`](vscode-extension). Open that folder in VS Code, run `npm install`, then press `F5` to launch an Extension Development Host. Its activity-bar view is a stateful AIRO chat: send follow-ups in the active repository session, attach supported local files, start chats, and use visual controls for models, accounts, usage, logs, diagnostics, and feedback. Configure the executable, routing mode, provider, tier, and output detail under VS Code’s **AIRO** extension settings.
+The repository includes a VS Code extension in [`vscode-extension`](vscode-extension). Run `pnpm install` from the repository root, open the extension folder in VS Code, then press `F5` to launch an Extension Development Host. Its secondary-sidebar view is a stateful AIRO chat: send follow-ups in the active repository session, attach supported local files, start chats, and use visual controls for models, accounts, usage, logs, diagnostics, and feedback. Configure the executable, routing mode, provider, tier, and output detail under VS Code’s **AIRO** extension settings.
 
 AIRO can fall back to the available provider during adaptive runs when one CLI is missing. Run `airo setup` at any time to revisit the model choices.
 
@@ -191,7 +188,7 @@ If an agent needs a blocking decision, it can emit `AIROUTE_QUESTION:`. AIRO ask
 
 For Claude runs, answering exactly `approve` or `approved` resumes the same model and phase with `bypassPermissions` for that continuation attempt. Other answers preserve the configured permission mode.
 
-The test suite enforces at least 95% line and function coverage. Run it with `npm test` or `npm run test:coverage`.
+The test suite enforces at least 95% line and function coverage. Run it with `pnpm test` or `pnpm run test:coverage`.
 
 ## Logs and feedback
 
@@ -304,22 +301,26 @@ To run the latest source locally, [clone the AIRO repository](https://github.com
 ```bash
 git clone https://github.com/pablospaniard/airo-cli.git
 cd airo-cli
-npm install
-npm run build
-npm link
+corepack enable
+pnpm install
+pnpm run build
+pnpm link --global
 airo doctor
 ```
 
-After linking, `airo` uses the source checkout while you work on it. Run `npm test` before submitting changes. To remove the local link later, run `npm unlink --global airo-cli`.
+After linking, `airo` uses the source checkout while you work on it. Run `pnpm test` before submitting changes. To remove the local link later, run `pnpm unlink --global airo-cli`.
 
 ## Development
 
+The repository pins its pnpm version through `package.json`. Enable Corepack once so the `pnpm` command uses that version:
+
 ```bash
-npm install
-npm test
+corepack enable
+pnpm install
+pnpm test
 ```
 
-`npm test` compiles the TypeScript sources and runs the Node.js test suite. Generated files under `dist/` are intentionally ignored.
+`pnpm test` compiles the TypeScript sources and runs the Node.js test suite. Generated files under `dist/` are intentionally ignored.
 
 ## Compatibility aliases
 

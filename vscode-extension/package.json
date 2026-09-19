@@ -14,12 +14,12 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
-    "@types/vscode": "^1.85.0",
+    "@types/vscode": "^1.106.0",
     "typescript": "^5.8.3"
   },
   "contributes": {
     "viewsContainers": {
-      "activitybar": [
+      "secondarySidebar": [
         {
           "id": "airo",
           "title": "AIRO",
@@ -109,6 +109,6 @@
     "onView:airo.sidebar"
   ],
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.106.0"
   }
 }
