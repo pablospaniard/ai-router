@@ -1,8 +1,8 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import type { Agent, LogLevel, PhaseKind } from "./types.js";
 import { agentColor, brand, divider, statusIcon, tierColor, ui } from "./ui.js";
+import { dataRootDir } from "./paths.js";
 
 export interface RunLoggerOptions {
   runId: string;
@@ -25,7 +25,7 @@ function nowTime(): string {
 }
 
 function dataDir(): string {
-  const dir = path.join(os.homedir(), ".local", "share", "ai-router", "logs");
+  const dir = path.join(dataRootDir(), "logs");
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -60,14 +60,14 @@ export class RunLogger {
   }
 
   private prettyStatus(message: string): string {
-    if (message.includes(" complete")) return `${ui.gray(nowTime())} ${statusIcon("ok")} ${ui.bold("ai-router")} ${message}`;
-    if (message.includes("phase ") || message.includes("started")) return `${ui.gray(nowTime())} ${statusIcon("work")} ${ui.bold("ai-router")} ${message}`;
-    if (message.includes("question") || message.includes("input")) return `${ui.gray(nowTime())} ${statusIcon("ask")} ${ui.bold("ai-router")} ${ui.yellow(message)}`;
-    return `${ui.gray(nowTime())} ${statusIcon("info")} ${ui.bold("ai-router")} ${message}`;
+    if (message.includes(" complete")) return `${ui.gray(nowTime())} ${statusIcon("ok")} ${ui.bold("airo")} ${message}`;
+    if (message.includes("phase ") || message.includes("started")) return `${ui.gray(nowTime())} ${statusIcon("work")} ${ui.bold("airo")} ${message}`;
+    if (message.includes("question") || message.includes("input")) return `${ui.gray(nowTime())} ${statusIcon("ask")} ${ui.bold("airo")} ${ui.yellow(message)}`;
+    return `${ui.gray(nowTime())} ${statusIcon("info")} ${ui.bold("airo")} ${message}`;
   }
 
   status(message: string) {
-    const line = `${nowTime()} [ai-router] ${message}`;
+    const line = `${nowTime()} [airo] ${message}`;
     this.append(this.combinedPath, line);
     this.console(this.prettyStatus(message));
   }
@@ -129,7 +129,7 @@ export class RunLogger {
   }
 
   question(question: string) {
-    const line = `${nowTime()} [ai-router][question] ${question}`;
+    const line = `${nowTime()} [airo][question] ${question}`;
     this.append(this.combinedPath, line);
     this.console("");
     this.console(divider("Input needed"));
@@ -141,7 +141,7 @@ export class RunLogger {
     if (!clean) return;
     const file = path.join(this.runDir, "final-output.txt");
     fs.writeFileSync(file, `${clean}\n`);
-    this.append(this.combinedPath, `${nowTime()} [ai-router][final] ${clean.replace(/\n/g, "\n[final] ")}`);
+    this.append(this.combinedPath, `${nowTime()} [airo][final] ${clean.replace(/\n/g, "\n[final] ")}`);
 
     this.console("");
     this.console(divider("Final answer"));

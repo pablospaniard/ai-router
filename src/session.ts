@@ -1,11 +1,11 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import type { SessionState, SessionTurn } from "./types.js";
+import { dataRootDir } from "./paths.js";
 
 function rootDir(): string {
-  const dir = path.join(os.homedir(), ".local", "share", "ai-router");
+  const dir = dataRootDir();
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }

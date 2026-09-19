@@ -1,15 +1,15 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import type { Agent, FeedbackRating, HistoryConfig, HistoryRecord, ModelTier } from "./types.js";
+import { dataRootDir } from "./paths.js";
 
 const STOP = new Set([
   "the","a","an","and","or","to","of","in","on","for","with","this","that","it","is","are","be","from","by","as","at","we","i","my","our","please","can","you","into"
 ]);
 
 export function historyPath(config: HistoryConfig): string {
-  return config.path ?? path.join(os.homedir(), ".local", "share", "ai-router", "history.jsonl");
+  return config.path ?? path.join(dataRootDir(), "history.jsonl");
 }
 
 export function newHistoryId(): string {

@@ -1,181 +1,178 @@
-# ai-router v0.7.0
+# AIRO v0.7.0
 
-Local adaptive router/orchestrator for Claude Code and Codex CLI using existing subscription-backed logins.
+**Adaptive Intelligence Routing & Orchestration** for Claude Code and Codex CLI.
 
-## Session-aware follow-ups
-
-A follow-up keeps the logical session context but is **re-routed independently**. That means the provider/model can change every turn.
+AIRO accepts a task, chooses the right provider and model tier, and can coordinate a multi-phase workflow across agents. It runs locally with your existing CLI logins—no separate model API keys or proxy service required.
 
 ```text
-review this PR
-→ Claude / balanced
-
---continue "fix the critical issue you found"
-→ Claude deep analysis → Codex implementation → Codex tests → Claude review
-
---continue "now fix only lint warnings"
-→ Codex / fast
+request → route → analyze → implement → test → review
+                    Claude     Codex      Codex   Claude
 ```
 
-The router bridges vendors with the shared working tree plus compact summaries of recent turns. It does not pretend Claude and Codex share hidden internal conversation state.
+## Why AIRO
 
+- Routes each request independently using task signals, custom rules, and prior feedback.
+- Maps work onto configurable `fast`, `balanced`, and `deep` model tiers.
+- Hands complex tasks between Claude Code and Codex through a shared working tree.
+- Preserves logical session context even when the provider changes between turns.
+- Streams structured progress while keeping hidden reasoning private.
+- Persists phase logs, final output, routing history, and user feedback locally.
+- Inserts a recovery phase when a workflow fails or reports an unresolved problem.
 
-## Live execution logs
+## Requirements
 
-Every run now streams progress and persists it under:
+- Node.js 20 or newer.
+- Claude Code and/or Codex CLI installed and authenticated.
+- An active subscription or login supported by the corresponding CLI.
 
-```text
-~/.local/share/ai-router/logs/
-  session-<session-id>/
-    run-<run-id>/
-      01-analyze-claude.log
-      02-implement-codex.log
-      03-test-codex.log
-      04-review-claude.log
-      combined.log
-```
-
-Logging levels:
-
-```bash
-ai-router --log compact "task"
-ai-router --log live "task"
-ai-router --log verbose "task"
-```
-
-- `compact`: router/phase status only
-- `live`: status + streamed AI CLI output (default)
-- `verbose`: live output plus stderr markers and command metadata
-
-List recent log runs:
-
-```bash
-ai-router logs
-```
-
-Print a run:
-
-```bash
-ai-router logs <run-id>
-```
-
-Follow a currently running or growing combined log:
-
-```bash
-ai-router logs --follow <run-id>
-```
-
-The logger shows only output actually emitted by Claude Code/Codex and tool activity. It does not expose hidden chain-of-thought.
+AIRO can fall back to the available provider during adaptive runs when one CLI is missing.
 
 ## Install
 
 ```bash
+git clone git@github.com:pablospaniard/airo-cli.git
+cd airo-cli
 npm install
-npm run build
 npm link
-ai-router doctor
+airo doctor
 ```
+
+The first interactive run launches model setup automatically. Run `airo setup` at any time to revisit it.
+
+## Quick start
+
+Start a session:
+
+```bash
+airo "review this PR for regressions"
+```
+
+Continue it with a newly routed follow-up:
+
+```bash
+airo --continue "fix the critical issue you found"
+```
+
+Force one agent or an adaptive workflow:
+
+```bash
+airo --single "rename this interface"
+airo --adaptive "investigate and fix this intermittent failure"
+```
+
+Preview the decision without running an agent:
+
+```bash
+airo --dry-run --explain "migrate this legacy module"
+```
+
+## How routing works
+
+AIRO scores the request for provider and complexity signals, applies matching configuration rules, and incorporates feedback from similar prior work. Complexity maps to a model tier rather than a hard-coded model ID.
+
+The default Codex mapping is:
+
+| Tier | Model | Effort |
+| --- | --- | --- |
+| `fast` | `gpt-5.6-luna` | `low` |
+| `balanced` | `gpt-5.6-terra` | `medium` |
+| `deep` | `gpt-5.6-sol` | `xhigh` |
+
+Use `airo models` to inspect the active Claude and Codex mappings.
+
+## Sessions and chat
+
+```bash
+airo chat
+airo session
+airo sessions
+airo session new "new task"
+airo session clear
+airo --session <session-id> "add tests for that fix"
+```
+
+Follow-ups preserve a compact summary of recent outcomes and are routed independently. AIRO does not imply that Claude and Codex share hidden conversation state.
+
+If an agent needs a blocking decision, it can emit `AIROUTE_QUESTION:`. AIRO asks for input and resumes the same phase, with up to four clarification rounds per phase.
+
+## Logs and feedback
+
+Choose how much progress appears in the terminal:
+
+```bash
+airo --log compact "task"
+airo --log live "task"
+airo --log verbose "task"
+```
+
+- `compact` shows router and phase status.
+- `live` adds streamed agent output and is the default.
+- `verbose` also shows stderr and command metadata.
+
+Inspect persisted runs:
+
+```bash
+airo logs
+airo logs <run-id>
+airo logs --follow <run-id>
+airo history 20
+```
+
+Teach the router from a completed run:
+
+```bash
+airo feedback good <run-id>
+airo feedback bad <run-id> "used more reasoning than necessary"
+```
+
+Each run stores its combined log, individual phase logs, structured event streams, and a clean `final-output.txt`.
+
+## Configuration
+
+The setup wizard writes global configuration to:
+
+```text
+~/.config/airo/config.json
+```
+
+Create a project-specific configuration with:
+
+```bash
+airo config init
+```
+
+This creates `.airo.json` in the current directory. Project configuration takes precedence over global configuration. See [`airo.config.example.json`](airo.config.example.json) for all available settings.
+
+AIRO continues to discover legacy `.ai-router.json`, `~/.config/ai-router/config.json`, and `~/.local/share/ai-router/` data so existing installations keep their sessions, history, and logs.
+
+## Command reference
+
+| Command | Purpose |
+| --- | --- |
+| `airo "task"` | Start a new logical session |
+| `airo --continue "task"` | Continue the active repository session |
+| `airo chat` | Start interactive mode |
+| `airo --single "task"` | Force a single-agent run |
+| `airo --adaptive "task"` | Force multi-phase orchestration |
+| `airo setup` | Configure allowed models and tiers |
+| `airo models` | Show the active model mapping |
+| `airo doctor` | Check provider commands and storage paths |
+| `airo logs [run-id]` | List or print persisted logs |
+| `airo history [limit]` | Show routing history |
+| `airo feedback good\|bad ...` | Rate a completed run |
+| `airo --version` | Print the installed version |
+
+Set `NO_COLOR=1` to disable ANSI colors.
 
 ## Development
 
 ```bash
+npm install
 npm test
 ```
 
-The test command compiles the TypeScript sources and runs the built-in Node.js test suite.
+`npm test` compiles the TypeScript sources and runs the Node.js test suite. Generated files under `dist/` are intentionally ignored.
 
-## Start a session
+## Compatibility aliases
 
-```bash
-ai-router "review this PR for regressions"
-```
-
-## Follow up
-
-```bash
-ai-router --continue "fix the critical issue you found"
-```
-
-Or continue an explicit session:
-
-```bash
-ai-router --session <session-id> "add tests for that fix"
-```
-
-## Interactive mode
-
-```bash
-ai-router chat
-```
-
-Then type follow-ups naturally. Each turn can use a different provider/model.
-
-## Session management
-
-```bash
-ai-router session
-ai-router sessions
-ai-router session new "new task"
-ai-router session clear
-```
-
-Sessions are stored in `~/.local/share/ai-router/sessions/`. History remains in the existing history store.
-
-## Feedback
-
-```bash
-ai-router feedback good <runId>
-ai-router feedback bad <runId> "too much reasoning"
-```
-
-
-## Default Codex model mapping
-
-- fast → `gpt-5.6-luna` / low
-- balanced → `gpt-5.6-terra` / medium
-- deep → `gpt-5.6-sol` / xhigh
-
-## Clean final output
-
-After the live progress stream, every completed run now prints a clean final response block:
-
-```text
-──────────────── Final answer ────────────────
-<provider final response>
-──────────────────────────────────────────────
-```
-
-The same response is saved at `final-output.txt` inside the run log directory. For adaptive runs, the orchestrator uses the last non-empty phase response (normally the final review/result phase).
-
-
-## Terminal UX and interactive clarification
-
-Agents can pause the workflow for a blocking decision by emitting `AIROUTE_QUESTION:`. The router shows a highlighted question, waits for your answer, and resumes the same phase with the answer and prior task context. Up to four clarification rounds are allowed per phase.
-
-The CLI now uses ANSI colors when attached to a TTY, Unicode progress symbols (`→`, `✓`, `✗`, `…`, `◆`) and cleaner section dividers. Set `NO_COLOR=1` to disable colors. Font ligatures themselves are controlled by your terminal font/settings.
-
-## v0.7.0 — full-color CLI and first-run model setup
-
-On the first interactive run, AI Router launches a setup wizard automatically. You can also run it anytime with:
-
-```bash
-ai-router setup
-```
-
-The wizard lets you select the Claude and Codex models the router is allowed to use, then map them to the `fast`, `balanced`, and `deep` tiers with per-tier effort levels.
-
-Inspect the active mapping with:
-
-```bash
-ai-router models
-```
-
-The global configuration is stored at:
-
-```text
-~/.config/ai-router/config.json
-```
-
-The generated JSON includes a `_comment` reminding users to review or change the model list with `ai-router setup` or by editing the config directly.
-
-The entire CLI now uses a consistent ANSI color theme for providers, tiers, commands, status icons, sessions, logs, prompts, errors, and final answers. Set `NO_COLOR=1` to disable colors.
+`ai-router`, `airoute`, and `ai-route` remain available as command aliases for existing users. New documentation and integrations should use `airo`.

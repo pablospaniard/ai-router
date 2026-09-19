@@ -3,7 +3,7 @@ import path from "node:path";
 import os from "node:os";
 import type { RouterConfig } from "./types.js";
 
-export const CONFIG_NOTE = "Review or change available models anytime with `ai-router setup`, or edit this file directly.";
+export const CONFIG_NOTE = "Review or change available models anytime with `airo setup`, or edit this file directly.";
 
 export const DEFAULT_CONFIG: RouterConfig = {
   policy: "balanced",
@@ -38,11 +38,16 @@ export const DEFAULT_CONFIG: RouterConfig = {
 };
 
 export function configCandidates(cwd = process.cwd()): string[] {
-  return [path.join(cwd, ".ai-router.json"), path.join(os.homedir(), ".config", "ai-router", "config.json")];
+  return [
+    path.join(cwd, ".airo.json"),
+    path.join(cwd, ".ai-router.json"),
+    path.join(os.homedir(), ".config", "airo", "config.json"),
+    path.join(os.homedir(), ".config", "ai-router", "config.json")
+  ];
 }
 
 export function globalConfigPath(): string {
-  return path.join(os.homedir(), ".config", "ai-router", "config.json");
+  return path.join(os.homedir(), ".config", "airo", "config.json");
 }
 
 function mergeProvider(base: RouterConfig["claude"], value: any): RouterConfig["claude"] {
@@ -76,7 +81,7 @@ export function loadConfig(cwd = process.cwd()): { config: RouterConfig; path?: 
 }
 
 export function writeProjectConfig(cwd = process.cwd()): string {
-  const file = path.join(cwd, ".ai-router.json");
+  const file = path.join(cwd, ".airo.json");
   if (fs.existsSync(file)) throw new Error(`${file} already exists`);
   fs.writeFileSync(file, JSON.stringify({ _comment: CONFIG_NOTE, ...DEFAULT_CONFIG }, null, 2) + "\n");
   return file;

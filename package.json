@@ -1,10 +1,11 @@
 {
-  "name": "ai-router",
+  "name": "airo-cli",
   "version": "0.7.0",
   "private": true,
-  "description": "Adaptive local orchestrator with live per-phase logs, sessions, history, and feedback for Claude Code and Codex CLI",
+  "description": "Adaptive Intelligence Routing & Orchestration for Claude Code and Codex CLI",
   "type": "module",
   "bin": {
+    "airo": "./dist/cli.js",
     "ai-router": "./dist/cli.js",
     "airoute": "./dist/cli.js",
     "ai-route": "./dist/cli.js"
