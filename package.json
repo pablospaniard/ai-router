@@ -1,14 +1,34 @@
 {
   "name": "airo-cli",
   "version": "0.7.0",
-  "private": true,
   "description": "Adaptive Intelligence Routing & Orchestration for Claude Code and Codex CLI",
+  "keywords": [
+    "ai",
+    "cli",
+    "claude-code",
+    "codex",
+    "orchestration",
+    "router"
+  ],
+  "homepage": "https://github.com/pablospaniard/airo-cli#readme",
+  "bugs": {
+    "url": "https://github.com/pablospaniard/airo-cli/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pablospaniard/airo-cli.git"
+  },
   "type": "module",
+  "files": [
+    "dist/*.js",
+    "README.md",
+    "airo.config.example.json"
+  ],
   "bin": {
-    "airo": "./dist/cli.js",
-    "ai-router": "./dist/cli.js",
-    "airoute": "./dist/cli.js",
-    "ai-route": "./dist/cli.js"
+    "airo": "dist/cli.js",
+    "ai-router": "dist/cli.js",
+    "airoute": "dist/cli.js",
+    "ai-route": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc && chmod +x dist/cli.js",
@@ -19,6 +39,9 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

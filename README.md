@@ -31,12 +31,12 @@ AIRO can fall back to the available provider during adaptive runs when one CLI i
 ## Install
 
 ```bash
-git clone git@github.com:pablospaniard/airo-cli.git
-cd airo-cli
-npm install
-npm link
+npm install --global airo-cli
 airo doctor
 ```
+
+To develop AIRO locally instead, clone the repository, run `npm install`, and use
+`npm link` to expose the `airo` command.
 
 The first interactive run launches model setup automatically. Run `airo setup` at any time to revisit it.
 
