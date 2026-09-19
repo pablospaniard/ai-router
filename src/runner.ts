@@ -10,7 +10,7 @@ export function commandExists(command: string): boolean {
 /** Provider errors that usually mean this account/model cannot serve the request right now. */
 export function isUsageLimitError(text: string, exitCode?: number): boolean {
   if (!text && exitCode === 0) return false;
-  return /(?:usage|quota|rate)[ -]?(?:limit|limited|exhausted|exceeded)|(?:credit|credits|balance)[ -]?(?:limit|exhausted|insufficient)|too many requests|(?:429|resource_exhausted|rate_limit_error|quota_exceeded)|billing.{0,30}(?:limit|disabled|past due)|out of credits/i.test(text);
+  return /(?:usage|quota|rate|session|request|message|token)[ -]?(?:limit|limited|exhausted|exceeded)|(?:hit|reached|exceeded|ran out of).{0,40}(?:limit|quota|credits?|balance)|(?:credit|credits|balance)[ -]?(?:limit|exhausted|insufficient)|too many requests|(?:429|resource_exhausted|rate_limit_error|quota_exceeded)|billing.{0,30}(?:limit|disabled|past due)|out of credits/i.test(text);
 }
 
 export function commandVersion(command: string): string {
@@ -254,6 +254,10 @@ export async function runAgent(
       const progress = progressFor(route.agent, event);
       for (const msg of progress.messages) {
         options.logger?.progress(options.logMeta!, msg.text, msg.category);
+        // Structured providers may report failures only as progress events. Keep
+        // error text in the captured result so callers can decide whether to
+        // retry on another provider.
+        if (msg.category === "error") fallbackOutput += `${msg.text}\n`;
         if (!question && msg.category === "message") question = extractQuestion(msg.text);
       }
       if (progress.candidateOutput) candidateOutput = progress.candidateOutput;

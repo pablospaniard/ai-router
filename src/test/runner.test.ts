@@ -6,7 +6,13 @@ import test from "node:test";
 import { DEFAULT_CONFIG } from "../config.js";
 import { RunLogger } from "../logging.js";
 import { routeTask } from "../router.js";
-import { addTokenUsage, claudeProgress, codexProgress, commandExists, commandVersion, extractQuestion, isApprovalAnswer, progressFor, runAgent } from "../runner.js";
+import { addTokenUsage, claudeProgress, codexProgress, commandExists, commandVersion, extractQuestion, isApprovalAnswer, isUsageLimitError, progressFor, runAgent } from "../runner.js";
+
+test("detects provider session and quota limit failures", () => {
+  assert.equal(isUsageLimitError("You've hit your session limit."), true);
+  assert.equal(isUsageLimitError("rate_limit_error: too many requests"), true);
+  assert.equal(isUsageLimitError("Authentication failed"), false);
+});
 
 test("extracts explicit and permission-blocked clarification questions", () => {
   assert.equal(extractQuestion("AIROUTE_QUESTION: Which database should I use?"), "Which database should I use?");
