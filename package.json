@@ -1,0 +1,26 @@
+{
+  "name": "subscription-ai-router",
+  "version": "0.7.0",
+  "private": true,
+  "description": "Adaptive local orchestrator with live per-phase logs, sessions, history, and feedback for Claude Code and Codex CLI",
+  "type": "module",
+  "bin": {
+    "airoute": "./dist/cli.js",
+    "ai-route": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc && chmod +x dist/cli.js",
+    "dev": "tsx src/cli.ts",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "start": "node dist/cli.js",
+    "prepare": "npm run build"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.3"
+  }
+}

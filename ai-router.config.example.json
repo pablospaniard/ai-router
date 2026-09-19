@@ -1,0 +1,77 @@
+{
+  "policy": "balanced",
+  "defaultAgent": "codex",
+  "claude": {
+    "command": "claude",
+    "args": [],
+    "models": {
+      "fast": {
+        "model": "haiku",
+        "effort": "low"
+      },
+      "balanced": {
+        "model": "sonnet",
+        "effort": "medium"
+      },
+      "deep": {
+        "model": "opus",
+        "effort": "high"
+      }
+    },
+    "allowedModels": [
+      "haiku",
+      "sonnet",
+      "opus"
+    ]
+  },
+  "codex": {
+    "command": "codex",
+    "args": [],
+    "models": {
+      "fast": {
+        "model": "gpt-5.6-luna",
+        "effort": "low"
+      },
+      "balanced": {
+        "model": "gpt-5.6-terra",
+        "effort": "medium"
+      },
+      "deep": {
+        "model": "gpt-5.6-sol",
+        "effort": "xhigh"
+      }
+    },
+    "allowedModels": [
+      "gpt-5.6-luna",
+      "gpt-5.6-terra",
+      "gpt-5.6-sol"
+    ]
+  },
+  "history": {
+    "enabled": true,
+    "learningEnabled": true,
+    "similarityThreshold": 0.25
+  },
+  "orchestration": {
+    "mode": "auto",
+    "maxPhases": 6,
+    "autoReview": true,
+    "recoverOnFailure": true,
+    "stopOnFailure": false,
+    "outputTailChars": 5000
+  },
+  "rules": [
+    {
+      "name": "Native crash investigation",
+      "agent": "claude",
+      "modelTier": "deep",
+      "effort": "high",
+      "pattern": "(ios|android|xcode|gradle).*(crash|race|root cause)"
+    }
+  ],
+  "logging": {
+    "level": "live",
+    "persist": true
+  },
+  "_comment": "Review or change available models anytime with `airoute setup`, or edit this file directly."
+}
