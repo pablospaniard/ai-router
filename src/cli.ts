@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import readline from "node:readline";
-import { agentColor, brand, command as commandColor, divider, promptLabel, statusIcon, tierColor, ui } from "./ui.js";
+import { agentColor, brand, command as commandColor, divider, panel, promptLabel, statusIcon, tierColor, ui } from "./ui.js";
 import fs from "node:fs";
 import { loadConfig, writeProjectConfig } from "./config.js";
 import { runSetup } from "./setup.js";
@@ -13,6 +13,7 @@ import { appendTurn, clearActiveSession, createSession, getActiveSession, listSe
 import { findRunLogs, followFile, logsRoot, recentRunDirs, RunLogger } from "./logging.js";
 import type { Agent, Effort, FeedbackRating, LogLevel, ModelTier, SessionState } from "./types.js";
 import { VERSION } from "./version.js";
+import { INTERACTIVE_COMMANDS, parseInteractiveInput, taskArgs, type InteractivePreferences } from "./interactive.js";
 
 function requireText(file: string): string { return fs.readFileSync(file, "utf8"); }
 
@@ -22,6 +23,7 @@ function help() {
   console.log(`${brand()} ${ui.dim("Adaptive Intelligence Routing & Orchestration")}`);
   console.log("");
   console.log(ui.bold("Core"));
+  console.log(`  ${commandColor("airo")}                                   ${ui.gray("open the interactive workspace")}`);
   console.log(`  ${commandColor('airo "task"')}                            ${ui.gray("new logical session")}`);
   console.log(`  ${commandColor('airo --continue "follow-up"')}             ${ui.gray("continue active repo session")}`);
   console.log(`  ${commandColor('airo chat')}                               ${ui.gray("interactive follow-up mode")}`);
@@ -159,24 +161,96 @@ async function execute(args: ReturnType<typeof parseArgs>, session: SessionState
   return r.exitCode;
 }
 
+function interactivePrompt(session: SessionState, preferences: InteractivePreferences): string {
+  const mode = preferences.mode === "auto" ? ui.green("auto") : preferences.mode === "adaptive" ? ui.magenta("adaptive") : ui.yellow("single");
+  const agent = preferences.agent === "auto" ? ui.gray("auto-agent") : agentColor(preferences.agent, preferences.agent);
+  return `${brand()} ${ui.gray(session.sessionId.slice(0, 6))} ${mode} ${agent} ${ui.green("❯")} `;
+}
+
+function interactiveStatus(session: SessionState, preferences: InteractivePreferences, config: any, path?: string): string {
+  const provider = (agent: Agent) => {
+    const available = commandExists(config[agent].command);
+    return `${available ? statusIcon("ok") : statusIcon("error")} ${agentColor(agent, agent.padEnd(6))} ${ui.gray(config[agent].models.balanced.model)}`;
+  };
+  return panel(`AIRO v${VERSION}`, [
+    `${ui.bold("session")}  ${ui.cyan(session.sessionId)} ${ui.gray(`· ${session.turns.length} turn(s)`)}`,
+    `${ui.bold("mode")}     ${ui.cyan(preferences.mode)} ${ui.gray("·")} ${ui.bold("agent")} ${ui.cyan(preferences.agent)} ${ui.gray("·")} ${ui.bold("tier")} ${tierColor(preferences.tier ?? "auto")}`,
+    `${ui.bold("output")}   ${ui.cyan(preferences.logLevel)} ${ui.gray("· config ")} ${path ? ui.cyan(path) : ui.yellow("defaults")}`,
+    `${provider("claude")}    ${provider("codex")}`,
+  ]);
+}
+
+function interactiveHelp(): string {
+  return panel("Interactive commands", [
+    `${commandColor("/new [title]")}        ${ui.gray("start a fresh session")}`,
+    `${commandColor("/status")}             ${ui.gray("show session and run preferences")}`,
+    `${commandColor("/mode auto|adaptive|single")} ${ui.gray("set workflow mode")}`,
+    `${commandColor("/agent auto|claude|codex")}   ${ui.gray("pin or auto-select a provider")}`,
+    `${commandColor("/tier auto|fast|balanced|deep")} ${ui.gray("set model tier")}`,
+    `${commandColor("/log compact|live|verbose")}  ${ui.gray("set output detail")}`,
+    `${commandColor("/models")} ${commandColor("/sessions")} ${commandColor("/clear")} ${commandColor("/exit")}`,
+  ], 76);
+}
+
 async function chatLoop(config: any, path?: string) {
-  let session = getActiveSession();
-  if (!session) session = createSession("Interactive session");
-  console.log(`${divider("AIRO Chat")}\n${statusIcon("ok")} session ${ui.bold(session.sessionId)}  ${ui.gray("/new fresh · /exit quit")}`);
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const ask = () => new Promise<string>(resolve => rl.question(promptLabel(), resolve));
+  let session: SessionState = getActiveSession() ?? createSession("Interactive session");
+  const preferences: InteractivePreferences = { mode: "auto", agent: "auto", logLevel: config.logging.level };
+  console.log("");
+  console.log(interactiveStatus(session, preferences, config, path));
+  console.log(`${ui.gray("Type a task to begin, or")} ${commandColor("/help")} ${ui.gray("for interactive commands.")}`);
+  console.log("");
+  const completer = (line: string) => {
+    if (!line.startsWith("/")) return [[], line];
+    const hits = INTERACTIVE_COMMANDS.filter(command => command.startsWith(line));
+    return [hits.length ? hits : INTERACTIVE_COMMANDS, line];
+  };
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, completer, historySize: 200, removeHistoryDuplicates: true });
+  const ask = () => new Promise<string>(resolve => rl.question(interactivePrompt(session, preferences), resolve));
   const askAnswer = (_question: string) => new Promise<string>(resolve => rl.question(`${promptLabel()}${ui.yellow("answer")}: `, resolve));
   try {
     while (true) {
-      const q = (await ask()).trim();
-      if (!q) continue;
-      if (q === "/exit" || q === "/quit") break;
-      if (q === "/new") { session = createSession("Interactive session"); console.log(`${statusIcon("ok")} new session ${ui.bold(session.sessionId)}`); continue; }
-      const args = parseArgs(["--continue", q]);
-      await execute(args, session, config, path, askAnswer);
-      session = loadSession(session.sessionId);
+      const action = parseInteractiveInput(await ask());
+      if (action.kind === "empty") continue;
+      if (action.kind === "quit") break;
+      if (action.kind === "help") { console.log(interactiveHelp()); continue; }
+      if (action.kind === "status") { console.log(interactiveStatus(session, preferences, config, path)); continue; }
+      if (action.kind === "clear") { process.stdout.write(process.stdout.isTTY ? "\x1b[2J\x1b[H" : "\n"); continue; }
+      if (action.kind === "models") { printModels(); continue; }
+      if (action.kind === "sessions") {
+        const sessions = listSessions();
+        console.log(panel("Repository sessions", sessions.length ? sessions.slice(0, 8).map(item =>
+          `${item.sessionId === session.sessionId ? statusIcon("ok") : " "} ${ui.bold(item.sessionId)} ${ui.gray(`· ${item.turns.length} turns · ${item.originalTask}`)}`
+        ) : [ui.gray("No sessions for this repository.")]));
+        continue;
+      }
+      if (action.kind === "new") {
+        session = createSession(action.title ?? "Interactive session");
+        console.log(`${statusIcon("ok")} ${ui.green("new session")} ${ui.bold(session.sessionId)}${action.title ? ui.gray(` · ${action.title}`) : ""}`);
+        continue;
+      }
+      if (action.kind === "set-mode") preferences.mode = action.value;
+      else if (action.kind === "set-agent") preferences.agent = action.value;
+      else if (action.kind === "set-tier") preferences.tier = action.value;
+      else if (action.kind === "set-log") preferences.logLevel = action.value;
+      else if (action.kind === "error") { console.log(`${statusIcon("error")} ${ui.red(action.message)}`); continue; }
+      else if (action.kind === "task") {
+        const args = parseArgs(taskArgs(action.task, preferences));
+        const adaptive = args.adaptive || (!args.single && shouldOrchestrate(args.task, config));
+        console.log(`${statusIcon("work")} ${ui.gray("workflow")} ${adaptive ? ui.magenta("adaptive") : ui.cyan("single")} ${ui.gray("· preparing run")}`);
+        try {
+          await execute(args, session, config, path, askAnswer);
+          session = loadSession(session.sessionId);
+        } catch (error) {
+          console.log(`${statusIcon("error")} ${ui.red(error instanceof Error ? error.message : String(error))}`);
+        }
+        continue;
+      }
+      console.log(`${statusIcon("ok")} ${ui.gray("updated preferences ·")} ${ui.cyan(`mode=${preferences.mode} agent=${preferences.agent} tier=${preferences.tier ?? "auto"} log=${preferences.logLevel}`)}`);
     }
-  } finally { rl.close(); }
+  } finally {
+    rl.close();
+    console.log(`${statusIcon("ok")} ${ui.gray("AIRO session saved. Goodbye.")}`);
+  }
 }
 
 async function main() {
@@ -236,7 +310,7 @@ async function main() {
     else { console.log(requireText(file)); }
     return;
   }
-  if (raw[0] === "chat") { await chatLoop(config, path); return; }
+  if (raw[0] === "chat" || (raw.length === 0 && process.stdin.isTTY)) { await chatLoop(config, path); return; }
   if (raw[0] === "sessions") {
     const list = listSessions();
     if (!list.length) console.log(`${statusIcon("info")} ${ui.gray("No sessions for this repo.")}`);

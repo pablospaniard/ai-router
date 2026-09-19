@@ -41,6 +41,14 @@ The first interactive run launches model setup automatically. Run `airo setup` a
 
 ## Quick start
 
+Open the interactive workspace:
+
+```bash
+airo
+```
+
+The workspace shows the active session, provider availability, routing preferences, and output mode. Type a task directly or use `/help` to discover commands. Tab completion is available for slash commands.
+
 Start a session:
 
 ```bash
@@ -83,12 +91,28 @@ Use `airo models` to inspect the active Claude and Codex mappings.
 ## Sessions and chat
 
 ```bash
+airo
 airo chat
 airo session
 airo sessions
 airo session new "new task"
 airo session clear
 airo --session <session-id> "add tests for that fix"
+```
+
+Inside the interactive workspace, preferences persist for the current process:
+
+```text
+/mode auto|adaptive|single
+/agent auto|claude|codex
+/tier auto|fast|balanced|deep
+/log compact|live|verbose
+/status
+/new [title]
+/models
+/sessions
+/clear
+/exit
 ```
 
 Follow-ups preserve a compact summary of recent outcomes and are routed independently. AIRO does not imply that Claude and Codex share hidden conversation state.
@@ -149,6 +173,7 @@ AIRO continues to discover legacy `.ai-router.json`, `~/.config/ai-router/config
 
 | Command | Purpose |
 | --- | --- |
+| `airo` | Open the interactive workspace |
 | `airo "task"` | Start a new logical session |
 | `airo --continue "task"` | Continue the active repository session |
 | `airo chat` | Start interactive mode |

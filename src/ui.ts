@@ -31,3 +31,17 @@ export function divider(title?: string): string {
 }
 export function promptLabel(): string { return `${ui.green("❯")} `; }
 export function command(s: string): string { return ui.bold(ui.cyan(s)); }
+
+function plainText(value: string): string { return value.replace(/\x1b\[[0-9;]*m/g, ""); }
+function visibleLength(value: string): number { return plainText(value).length; }
+
+export function panel(title: string, lines: string[], width = 68): string {
+  const inner = Math.max(24, width - 4);
+  const topTitle = ` ${title} `;
+  const top = `╭${topTitle}${"─".repeat(Math.max(0, width - topTitle.length - 2))}╮`;
+  const body = lines.map(line => {
+    const clipped = visibleLength(line) > inner ? `${plainText(line).slice(0, Math.max(0, inner - 1))}…` : line;
+    return `│ ${clipped}${" ".repeat(Math.max(0, inner - visibleLength(clipped)))} │`;
+  });
+  return [ui.cyan(top), ...body, ui.cyan(`╰${"─".repeat(width - 2)}╯`)].join("\n");
+}
