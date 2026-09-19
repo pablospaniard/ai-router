@@ -23,6 +23,14 @@ test("introduces AIRO and its initial model setup on first run", () => {
   const sectionTitles = welcome.split("\n").filter(line => /(?:Welcome|Initial defaults)/.test(line));
   assert.equal(sectionTitles.length, 2);
   assert.equal(new Set(sectionTitles.map(line => line.length)).size, 1);
+
+  const midpoint = (line: string) => line.search(/\S/) + line.trim().length / 2;
+  const lines = welcome.split("\n");
+  const logoLine = lines.find(line => line.includes("█████╗"));
+  const subtitleLine = lines.find(line => line.includes("Adaptive Intelligence"));
+  assert.ok(logoLine && subtitleLine);
+  assert.ok(Math.abs(midpoint(logoLine) - midpoint(sectionTitles[0])) <= 0.5);
+  assert.ok(Math.abs(midpoint(subtitleLine) - midpoint(sectionTitles[0])) <= 0.5);
 });
 
 test("uses the supplied configuration when documenting defaults", () => {

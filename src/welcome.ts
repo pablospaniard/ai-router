@@ -29,12 +29,12 @@ function defaultsTable(config: RouterConfig): string[] {
 /** The introduction shown immediately before the interactive first-run setup. */
 export function firstRunWelcome(config: RouterConfig = DEFAULT_CONFIG): string {
   const logo = [
-    "     █████╗ ██╗██████╗   ██████╗ ",
-    "    ██╔══██╗██║██╔══██╗ ██╔═══██╗",
-    "    ███████║██║██████╔╝ ██║   ██║",
-    "    ██╔══██║██║██╔══██╗ ██║   ██║",
-    "    ██║  ██║██║██║  ██║ ╚██████╔╝",
-    "    ╚═╝  ╚═╝╚═╝╚═╝  ╚═╝  ╚═════╝ ",
+    " █████╗ ██╗██████╗   ██████╗ ",
+    "██╔══██╗██║██╔══██╗ ██╔═══██╗",
+    "███████║██║██████╔╝ ██║   ██║",
+    "██╔══██║██║██╔══██╗ ██║   ██║",
+    "██║  ██║██║██║  ██║ ╚██████╔╝",
+    "╚═╝  ╚═╝╚═╝╚═╝  ╚═╝  ╚═════╝ ",
   ].map(line => ui.bold(ui.cyan(line)));
 
   const center = (line: string, width: number) =>
@@ -43,8 +43,8 @@ export function firstRunWelcome(config: RouterConfig = DEFAULT_CONFIG): string {
   const width = outputWidth();
   const lines = [
     "",
-    ...logo.map(line => center(line, width)),
-    center(ui.dim("Adaptive Intelligence Routing & Orchestration"), width),
+    ...logo,
+    ui.dim("Adaptive Intelligence Routing & Orchestration"),
     "",
     sectionRule("Welcome"),
     `${ui.bold("AIRO")} routes each coding task between ${agentColor("claude", "Claude Code")} and ${agentColor("codex", "Codex CLI")}, choosing a model tier for the work.`,

@@ -227,7 +227,7 @@ function interactiveStatus(session: SessionState, preferences: InteractivePrefer
     `${ui.bold("session")}  ${ui.cyan(session.sessionId)} ${ui.gray(`· ${session.turns.length} turn(s)`)}`,
     `${ui.bold("mode")}     ${ui.cyan(preferences.mode)} ${ui.gray("·")} ${ui.bold("agent")} ${ui.cyan(preferences.agent)} ${ui.gray("·")} ${ui.bold("tier")} ${tierColor(preferences.tier ?? "auto")}`,
     `${ui.bold("output")}   ${ui.cyan(preferences.logLevel)} ${ui.gray("· config ")} ${path ? ui.cyan(path) : ui.yellow("defaults")}`,
-    `${provider("claude")}    ${provider("codex")}`,
+    `${ui.bold("models")}   ${ui.gray("balanced ·")} ${provider("claude")}    ${provider("codex")}`,
   ]);
 }
 
