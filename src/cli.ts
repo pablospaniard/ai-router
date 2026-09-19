@@ -237,7 +237,9 @@ function interactiveHelp(): string {
     `${commandColor("/agent auto|claude|codex")}   ${ui.gray("pin or auto-select a provider")}`,
     `${commandColor("/tier auto|fast|balanced|deep")} ${ui.gray("set model tier")}`,
     `${commandColor("/log compact|live|verbose")}  ${ui.gray("set output detail")}`,
-    `${commandColor("/models")} ${commandColor("/sessions")} ${commandColor("/clear")} ${commandColor("/exit")}`,
+    `${commandColor("/models")} ${commandColor("/account")} ${commandColor("/usage [limit]")} ${commandColor("/logs")}`,
+    `${commandColor("/feedback good|bad [id|runId|last] [note]")}`,
+    `${commandColor("/sessions")} ${commandColor("/clear")} ${commandColor("/exit")}`,
   ], 76);
 }
 
@@ -266,6 +268,33 @@ async function chatLoop(config: any, path?: string) {
       if (action.kind === "status") { console.log(interactiveStatus(session, preferences, config, path)); continue; }
       if (action.kind === "clear") { process.stdout.write(process.stdout.isTTY ? "\x1b[2J\x1b[H" : "\n"); continue; }
       if (action.kind === "models") { printModels(); continue; }
+      if (action.kind === "account") {
+        console.log(panel("Provider accounts", inspectAccounts(config).map(account => {
+          const icon = account.available && account.authenticated ? statusIcon("ok") : statusIcon("error");
+          const identity = account.identity ?? (account.authenticated ? "identity not exposed by CLI" : account.status);
+          return `${icon} ${agentColor(account.agent, account.agent.padEnd(6))} ${ui.bold(identity)} ${ui.gray(`· default ${account.defaultModel ?? "not detected"}`)}`;
+        })));
+        continue;
+      }
+      if (action.kind === "usage") {
+        const report = buildUsageReport(config, action.limit ?? 20);
+        console.log(panel(`Token usage · last ${report.records.length} measured phase(s)`, [
+          `${ui.bold("Non-cached")} ${ui.cyan(nonCachedTokens(report.totals).toLocaleString())} tokens`,
+          `${ui.bold("Cache reads")} ${ui.cyan(report.totals.cachedInputTokens.toLocaleString())} tokens`,
+          `${ui.bold("Processed")} ${ui.cyan(processedTokens(report.totals).toLocaleString())} tokens`,
+        ]));
+        continue;
+      }
+      if (action.kind === "logs") {
+        const runs = recentRunDirs(20);
+        console.log(panel("Recent run logs", runs.length ? runs.map(run => `${ui.bold(run.runId)} ${ui.gray(run.mtime.toISOString())} ${ui.cyan(run.path)}`) : [ui.gray("No logs yet.")]));
+        continue;
+      }
+      if (action.kind === "feedback") {
+        const updated = setFeedback(config.history, action.rating, action.target ?? "last", action.note);
+        console.log(`${statusIcon("ok")} ${ui.gray("feedback saved for")} ${ui.bold(String(updated.length))} ${ui.gray("item(s)")}`);
+        continue;
+      }
       if (action.kind === "sessions") {
         const sessions = listSessions();
         console.log(panel("Repository sessions", sessions.length ? sessions.slice(0, 8).map(item =>

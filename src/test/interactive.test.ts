@@ -18,6 +18,10 @@ test("parses interactive preference commands", () => {
   assert.deepEqual(parseInteractiveInput("/status"), { kind: "status" });
   assert.deepEqual(parseInteractiveInput("/sessions"), { kind: "sessions" });
   assert.deepEqual(parseInteractiveInput("/models"), { kind: "models" });
+  assert.deepEqual(parseInteractiveInput("/account"), { kind: "account" });
+  assert.deepEqual(parseInteractiveInput("/usage 5"), { kind: "usage", limit: 5 });
+  assert.deepEqual(parseInteractiveInput("/logs"), { kind: "logs" });
+  assert.deepEqual(parseInteractiveInput("/feedback good last shipped"), { kind: "feedback", rating: "good", target: "last", note: "shipped" });
   assert.deepEqual(parseInteractiveInput("/clear"), { kind: "clear" });
   assert.deepEqual(parseInteractiveInput("/new named session"), { kind: "new", title: "named session" });
   assert.deepEqual(parseInteractiveInput("/new"), { kind: "new", title: undefined });

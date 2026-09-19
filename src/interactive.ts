@@ -18,6 +18,10 @@ export type InteractiveAction =
   | { kind: "status" }
   | { kind: "sessions" }
   | { kind: "models" }
+  | { kind: "account" }
+  | { kind: "usage"; limit?: number }
+  | { kind: "logs" }
+  | { kind: "feedback"; rating: FeedbackRating; target?: string; note?: string }
   | { kind: "clear" }
   | { kind: "set-mode"; value: InteractiveMode }
   | { kind: "set-agent"; value: "auto" | Agent }
@@ -26,7 +30,7 @@ export type InteractiveAction =
   | { kind: "error"; message: string };
 
 export const INTERACTIVE_COMMANDS = [
-  "/help", "/status", "/new", "/sessions", "/models", "/mode",
+  "/help", "/status", "/new", "/sessions", "/models", "/account", "/usage", "/logs", "/feedback", "/mode",
   "/agent", "/tier", "/log", "/clear", "/exit"
 ];
 
@@ -44,6 +48,17 @@ export function parseInteractiveInput(input: string): InteractiveAction {
   if (command === "/status") return { kind: "status" };
   if (command === "/sessions") return { kind: "sessions" };
   if (command === "/models") return { kind: "models" };
+  if (command === "/account") return { kind: "account" };
+  if (command === "/usage") {
+    const limit = args[0] === undefined ? undefined : Number(args[0]);
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) return { kind: "error", message: "Usage: /usage [limit]" };
+    return { kind: "usage", limit };
+  }
+  if (command === "/logs") return { kind: "logs" };
+  if (command === "/feedback") {
+    if (first !== "good" && first !== "bad") return { kind: "error", message: "Usage: /feedback good|bad [id|runId|last] [note]" };
+    return { kind: "feedback", rating: first, target: args[1], note: args.slice(2).join(" ") || undefined };
+  }
   if (command === "/clear") return { kind: "clear" };
   if (command === "/new") return { kind: "new", title: args.join(" ").trim() || undefined };
 
