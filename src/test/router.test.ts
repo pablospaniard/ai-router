@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DEFAULT_CONFIG } from "../config.js";
-import { applyPhasePreference, needsRecovery, planPhases, shouldOrchestrate } from "../orchestrator.js";
+import {
+  applyPhasePreference,
+  needsRecovery,
+  planPhases,
+  shouldOrchestrate,
+} from "../orchestrator.js";
 import { agentForModel, requestedModel, requestedModelTier, routeTask } from "../router.js";
 import type { RouterConfig } from "../types.js";
 
@@ -52,7 +57,10 @@ test("routes explicit models outside the automatic tier defaults", () => {
   const codex = routeTask("use gpt-6-astra and tell me the time", current);
   const claude = routeTask("please use claude-opus-5 for this review", current);
 
-  assert.deepEqual(requestedModel("use gpt-6-astra", current), { agent: "codex", model: "gpt-6-astra" });
+  assert.deepEqual(requestedModel("use gpt-6-astra", current), {
+    agent: "codex",
+    model: "gpt-6-astra",
+  });
   assert.equal(agentForModel("sonnet", current), "claude");
   assert.equal(agentForModel("o3", current), "codex");
   assert.equal(agentForModel("unknown-model", current), undefined);
@@ -67,7 +75,11 @@ test("routes explicit models outside the automatic tier defaults", () => {
 test("preserves an explicit model through adaptive phase preferences", () => {
   const current = config();
   const route = routeTask("use gpt-6-astra to review the architecture", current);
-  const phaseRoute = applyPhasePreference(route, planPhases("review the architecture", current)[0], current);
+  const phaseRoute = applyPhasePreference(
+    route,
+    planPhases("review the architecture", current)[0],
+    current,
+  );
 
   assert.equal(phaseRoute.agent, "codex");
   assert.equal(phaseRoute.model, "gpt-6-astra");
@@ -79,13 +91,15 @@ test("ignores negated explicit model requests", () => {
 
 test("applies the first matching custom routing rule", () => {
   const custom = config({
-    rules: [{
-      name: "docs policy",
-      pattern: "documentation",
-      agent: "claude",
-      modelTier: "balanced",
-      effort: "high",
-    }],
+    rules: [
+      {
+        name: "docs policy",
+        pattern: "documentation",
+        agent: "claude",
+        modelTier: "balanced",
+        effort: "high",
+      },
+    ],
   });
 
   const route = routeTask("Update the documentation", custom);
@@ -130,14 +144,20 @@ test("honors explicit orchestration modes", () => {
 test("plans a review-only request without implementation phases", () => {
   const plans = planPhases("Review this pull request", config());
 
-  assert.deepEqual(plans.map((phase) => phase.kind), ["review"]);
+  assert.deepEqual(
+    plans.map((phase) => phase.kind),
+    ["review"],
+  );
   assert.equal(plans[0].preferredAgent, "claude");
 });
 
 test("plans a minimal workflow for simple changes", () => {
   const plans = planPhases("Rename a type in one file", config());
 
-  assert.deepEqual(plans.map((phase) => phase.kind), ["implement", "test"]);
+  assert.deepEqual(
+    plans.map((phase) => phase.kind),
+    ["implement", "test"],
+  );
 });
 
 test("caps planned phases at the configured maximum", () => {
@@ -147,7 +167,10 @@ test("caps planned phases at the configured maximum", () => {
   const plans = planPhases("Fix a critical production crash", current);
 
   assert.equal(plans.length, 2);
-  assert.deepEqual(plans.map((phase) => phase.kind), ["analyze", "implement"]);
+  assert.deepEqual(
+    plans.map((phase) => phase.kind),
+    ["analyze", "implement"],
+  );
 });
 
 test("does not recover from historical failure wording in a successful result", () => {
@@ -161,6 +184,9 @@ test("does not recover from historical failure wording in a successful result", 
   };
 
   assert.equal(needsRecovery(execution), false);
-  assert.equal(needsRecovery({ ...execution, output: "Status: unresolved — missing credentials." }), true);
+  assert.equal(
+    needsRecovery({ ...execution, output: "Status: unresolved — missing credentials." }),
+    true,
+  );
   assert.equal(needsRecovery({ ...execution, exitCode: 1 }), true);
 });

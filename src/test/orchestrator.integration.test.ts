@@ -33,7 +33,9 @@ test("resumes the same Claude review with elevated permissions after approve", a
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-orchestrate-approve-"));
   const count = path.join(dir, "count");
   const argsLog = path.join(dir, "args");
-  const claude = executable(path.join(dir, "claude"), `
+  const claude = executable(
+    path.join(dir, "claude"),
+    `
 const fs = require("node:fs");
 const countFile = ${JSON.stringify(count)};
 const argsFile = ${JSON.stringify(argsLog)};
@@ -42,12 +44,19 @@ fs.writeFileSync(countFile, String(n + 1));
 fs.appendFileSync(argsFile, process.argv.slice(2).join(" ") + "\\n");
 const result = n === 0 ? "The command needs your approval. Could you approve permission to continue?" : "Review completed.";
 console.log(JSON.stringify({type:"result", subtype:"success", result, usage:{input_tokens:2,output_tokens:1}}));
-`);
-  const codex = executable(path.join(dir, "codex"), `console.log(JSON.stringify({type:"item.completed",item:{type:"agent_message",text:"done"}}));`);
+`,
+  );
+  const codex = executable(
+    path.join(dir, "codex"),
+    `console.log(JSON.stringify({type:"item.completed",item:{type:"agent_message",text:"done"}}));`,
+  );
   try {
     const answers: string[] = [];
     const result = await orchestrate("Review this pull request", testConfig(claude, codex), {
-      askUser: async question => { answers.push(question); return "approve"; },
+      askUser: async (question) => {
+        answers.push(question);
+        return "approve";
+      },
     });
     assert.equal(result.exitCode, 0);
     assert.equal(result.phases.length, 1);
@@ -63,7 +72,9 @@ console.log(JSON.stringify({type:"result", subtype:"success", result, usage:{inp
 test("inserts recovery after an unresolved phase and falls back to an available provider", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-orchestrate-recover-"));
   const count = path.join(dir, "count");
-  const codex = executable(path.join(dir, "codex"), `
+  const codex = executable(
+    path.join(dir, "codex"),
+    `
 const fs = require("node:fs");
 const file = ${JSON.stringify(count)};
 const n = fs.existsSync(file) ? Number(fs.readFileSync(file, "utf8")) : 0;
@@ -71,14 +82,15 @@ fs.writeFileSync(file, String(n + 1));
 const text = n === 0 ? "Status: unresolved — retry needed." : "Recovered and complete.";
 console.log(JSON.stringify({type:"item.completed",item:{type:"agent_message",text}}));
 console.log(JSON.stringify({type:"turn.completed",usage:{input_tokens:5,cached_input_tokens:2,output_tokens:1}}));
-`);
+`,
+  );
   try {
     const config = testConfig("definitely-missing-claude", codex);
     config.orchestration.maxPhases = 4;
     const result = await orchestrate("Rename a type in one file", config);
     assert.equal(result.exitCode, 0);
-    assert.ok(result.phases.some(phase => phase.phase.kind === "recover"));
-    assert.ok(result.phases.every(phase => phase.route.agent === "codex"));
+    assert.ok(result.phases.some((phase) => phase.phase.kind === "recover"));
+    assert.ok(result.phases.every((phase) => phase.route.agent === "codex"));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

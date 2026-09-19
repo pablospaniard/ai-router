@@ -4,8 +4,8 @@
   "description": "Adaptive Intelligence Routing & Orchestration for Claude Code and Codex CLI",
   "keywords": [
     "ai",
-    "cli",
     "claude-code",
+    "cli",
     "codex",
     "orchestration",
     "router"
@@ -18,35 +18,42 @@
     "type": "git",
     "url": "git+https://github.com/pablospaniard/airo-cli.git"
   },
-  "type": "module",
-  "files": [
-    "dist/*.js",
-    "README.md",
-    "airo.config.example.json"
-  ],
   "bin": {
-    "airo": "dist/cli.js",
+    "ai-route": "dist/cli.js",
     "ai-router": "dist/cli.js",
-    "airoute": "dist/cli.js",
-    "ai-route": "dist/cli.js"
+    "airo": "dist/cli.js",
+    "airoute": "dist/cli.js"
+  },
+  "files": [
+    "airo.config.example.json",
+    "README.md",
+    "dist/*.js"
+  ],
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc && chmod +x dist/cli.js",
     "dev": "tsx src/cli.ts",
+    "format": "oxfmt src vscode-extension/src package.json vscode-extension/package.json tsconfig.json vscode-extension/tsconfig.json",
+    "format:check": "oxfmt --check src vscode-extension/src package.json vscode-extension/package.json tsconfig.json vscode-extension/tsconfig.json",
+    "lint": "oxlint --deny-warnings --tsconfig tsconfig.json src vscode-extension/src",
+    "typecheck": "tsc --noEmit && tsc -p vscode-extension/tsconfig.json --noEmit",
     "test": "npm run test:coverage",
     "test:coverage": "npm run build && node --test --experimental-test-coverage --test-coverage-exclude=dist/test/** --test-coverage-lines=95 --test-coverage-functions=95 dist/test/*.test.js",
     "start": "node dist/cli.js",
+    "validate": "npm run format:check && npm run lint && npm run typecheck && npm test",
     "prepare": "npm run build"
-  },
-  "engines": {
-    "node": ">=22"
-  },
-  "publishConfig": {
-    "access": "public"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "oxfmt": "^0.24.0",
+    "oxlint": "^1.39.0",
     "tsx": "^4.19.0",
     "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

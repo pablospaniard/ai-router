@@ -3,11 +3,23 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { findRunLogs, followFile, logsRoot, recentRunDirs, RunLogger, type PhaseLogMeta } from "../logging.js";
+import {
+  findRunLogs,
+  followFile,
+  logsRoot,
+  recentRunDirs,
+  RunLogger,
+  type PhaseLogMeta,
+} from "../logging.js";
 
 const meta: PhaseLogMeta = {
-  phaseIndex: 1, phaseTotal: 2, phaseKind: "test", agent: "codex",
-  model: "test-model", effort: "low", tier: "fast",
+  phaseIndex: 1,
+  phaseTotal: 2,
+  phaseKind: "test",
+  agent: "codex",
+  model: "test-model",
+  effort: "low",
+  tier: "fast",
 };
 
 test("persists and renders every run-log event category", () => {
@@ -16,15 +28,31 @@ test("persists and renders every run-log event category", () => {
   const originalWrite = process.stdout.write;
   let terminal = "";
   process.env.HOME = home;
-  process.stdout.write = ((chunk: any) => { terminal += String(chunk); return true; }) as typeof process.stdout.write;
+  process.stdout.write = ((chunk: any) => {
+    terminal += String(chunk);
+    return true;
+  }) as typeof process.stdout.write;
   try {
-    const logger = new RunLogger({ runId: "run unsafe/name", sessionId: "session/name", level: "verbose" });
+    const logger = new RunLogger({
+      runId: "run unsafe/name",
+      sessionId: "session/name",
+      level: "verbose",
+    });
     logger.status("run started");
     logger.status("input received");
     logger.metadata("metadata");
     logger.phaseStart(meta);
     logger.rawEvent(meta, '{"event":true}');
-    for (const category of ["message", "tool", "file", "error", "retry", "result", "system", "status"]) {
+    for (const category of [
+      "message",
+      "tool",
+      "file",
+      "error",
+      "retry",
+      "result",
+      "system",
+      "status",
+    ]) {
       logger.progress(meta, `line one\r\nline two`, category);
     }
     logger.progress(meta, "   ");
@@ -39,7 +67,10 @@ test("persists and renders every run-log event category", () => {
     assert.ok(fs.existsSync(logger.combinedPath));
     assert.match(fs.readFileSync(logger.phaseFile(meta), "utf8"), /stderr two/);
     assert.match(fs.readFileSync(logger.eventsFile(meta), "utf8"), /event/);
-    assert.equal(fs.readFileSync(path.join(logger.runDir, "final-output.txt"), "utf8"), "## Done\n\n- passed\n");
+    assert.equal(
+      fs.readFileSync(path.join(logger.runDir, "final-output.txt"), "utf8"),
+      "## Done\n\n- passed\n",
+    );
     assert.equal(findRunLogs("run-unsafe-name"), logger.runDir);
     assert.equal(findRunLogs("missing"), undefined);
     assert.equal(recentRunDirs(1)[0].path, logger.runDir);
@@ -61,14 +92,17 @@ test("follows a log until interrupted and rejects missing files", async () => {
   const file = path.join(dir, "combined.log");
   const originalWrite = process.stdout.write;
   let terminal = "";
-  process.stdout.write = ((chunk: any) => { terminal += String(chunk); return true; }) as typeof process.stdout.write;
+  process.stdout.write = ((chunk: any) => {
+    terminal += String(chunk);
+    return true;
+  }) as typeof process.stdout.write;
   try {
     await assert.rejects(followFile(path.join(dir, "missing")), /Log file not found/);
     fs.writeFileSync(file, "first\n");
     const following = followFile(file);
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await new Promise((resolve) => setTimeout(resolve, 20));
     fs.appendFileSync(file, "second\n");
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await new Promise((resolve) => setTimeout(resolve, 20));
     process.emit("SIGINT");
     await following;
     assert.match(terminal, /first/);

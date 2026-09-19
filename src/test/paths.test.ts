@@ -18,8 +18,14 @@ test("copies legacy configuration and data into AIRO paths", () => {
     const result = migrateLegacyPaths(home);
 
     assert.equal(result.errors.length, 0);
-    assert.equal(fs.readFileSync(path.join(home, ".config", "airo", "config.json"), "utf8"), "{}\n");
-    assert.equal(fs.readFileSync(path.join(home, ".local", "share", "airo", "history.jsonl"), "utf8"), "history\n");
+    assert.equal(
+      fs.readFileSync(path.join(home, ".config", "airo", "config.json"), "utf8"),
+      "{}\n",
+    );
+    assert.equal(
+      fs.readFileSync(path.join(home, ".local", "share", "airo", "history.jsonl"), "utf8"),
+      "history\n",
+    );
     assert.equal(fs.existsSync(legacyConfig), true);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });

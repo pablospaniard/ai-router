@@ -3,26 +3,29 @@ import type { RouterConfig } from "./types.js";
 import { agentColor, command, outputWidth, sectionRule, ui, visibleLength } from "./ui.js";
 
 function defaultsTable(config: RouterConfig): string[] {
-  const rows = (["codex", "claude"] as const).flatMap(agent =>
-    (["fast", "balanced", "deep"] as const).map(tier => {
+  const rows = (["codex", "claude"] as const).flatMap((agent) =>
+    (["fast", "balanced", "deep"] as const).map((tier) => {
       const profile = config[agent].models[tier];
       return [agent, tier, profile.model, profile.effort ?? "auto"];
     }),
   );
   const headers = ["Provider", "Tier", "Model", "Effort"];
   const widths = headers.map((header, index) =>
-    Math.max(header.length, ...rows.map(row => row[index].length)),
+    Math.max(header.length, ...rows.map((row) => row[index].length)),
   );
-  const formatRow = (row: string[], colorProvider = false) => row.map((value, index) => {
-    const padded = value.padEnd(widths[index]);
-    return colorProvider && index === 0
-      ? agentColor(value as "claude" | "codex", padded)
-      : padded;
-  }).join("  ");
+  const formatRow = (row: string[], colorProvider = false) =>
+    row
+      .map((value, index) => {
+        const padded = value.padEnd(widths[index]);
+        return colorProvider && index === 0
+          ? agentColor(value as "claude" | "codex", padded)
+          : padded;
+      })
+      .join("  ");
   return [
     ui.gray(formatRow(headers)),
-    ui.gray(widths.map(width => "─".repeat(width)).join("  ")),
-    ...rows.map(row => formatRow(row, true)),
+    ui.gray(widths.map((width) => "─".repeat(width)).join("  ")),
+    ...rows.map((row) => formatRow(row, true)),
   ];
 }
 
@@ -35,10 +38,7 @@ export function firstRunWelcome(config: RouterConfig = DEFAULT_CONFIG): string {
     "██╔══██║██║██╔══██╗ ██║   ██║",
     "██║  ██║██║██║  ██║ ╚██████╔╝",
     "╚═╝  ╚═╝╚═╝╚═╝  ╚═╝  ╚═════╝ ",
-  ].map(line => ui.bold(ui.cyan(line)));
-
-  const center = (line: string, width: number) =>
-    `${" ".repeat(Math.max(0, Math.floor((width - visibleLength(line)) / 2)))}${line}`;
+  ].map((line) => ui.bold(ui.cyan(line)));
 
   const width = outputWidth();
   const lines = [
@@ -60,8 +60,11 @@ export function firstRunWelcome(config: RouterConfig = DEFAULT_CONFIG): string {
     "",
   ].join("\n");
 
-  return lines.split("\n").map(line => {
-    if (!line) return line;
-    return `${" ".repeat(Math.max(0, Math.floor((width - visibleLength(line)) / 2)))}${line}`;
-  }).join("\n");
+  return lines
+    .split("\n")
+    .map((line) => {
+      if (!line) return line;
+      return `${" ".repeat(Math.max(0, Math.floor((width - visibleLength(line)) / 2)))}${line}`;
+    })
+    .join("\n");
 }

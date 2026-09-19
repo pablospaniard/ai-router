@@ -3,7 +3,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { appendTurn, clearActiveSession, compactSessionContext, createSession, getActiveSession, listSessions, loadSession, saveSession, setActiveSession } from "../session.js";
+import {
+  appendTurn,
+  clearActiveSession,
+  compactSessionContext,
+  createSession,
+  getActiveSession,
+  listSessions,
+  loadSession,
+  saveSession,
+  setActiveSession,
+} from "../session.js";
 
 test("manages the complete session lifecycle", () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "airo-session-"));
@@ -17,8 +27,12 @@ test("manages the complete session lifecycle", () => {
     assert.equal(loadSession(session.sessionId).originalTask, "original task");
 
     appendTurn(session, {
-      turnId: "turn-1", runId: "run-1", timestamp: "2026-01-01T00:00:00.000Z",
-      userPrompt: "follow up", routeSummary: "single:codex/model", phaseSummaries: ["first", "second"],
+      turnId: "turn-1",
+      runId: "run-1",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      userPrompt: "follow up",
+      routeSummary: "single:codex/model",
+      phaseSummaries: ["first", "second"],
     });
     assert.match(compactSessionContext(session), /User follow-up: follow up/);
     saveSession(session);
@@ -34,7 +48,10 @@ test("manages the complete session lifecycle", () => {
     const sessionsDir = path.join(home, ".local", "share", "airo", "sessions");
     fs.writeFileSync(path.join(sessionsDir, "bad.json"), "bad json");
     assert.equal(listSessions(cwd).length, 1);
-    fs.writeFileSync(path.join(home, ".local", "share", "airo", "active-sessions.json"), "bad json");
+    fs.writeFileSync(
+      path.join(home, ".local", "share", "airo", "active-sessions.json"),
+      "bad json",
+    );
     assert.equal(getActiveSession(cwd), undefined);
   } finally {
     if (previousHome === undefined) delete process.env.HOME;

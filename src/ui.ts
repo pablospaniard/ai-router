@@ -1,6 +1,7 @@
 const interactive = Boolean(process.stdout.isTTY);
 const enabled = interactive && !process.env.NO_COLOR;
-const wrap = (open: string, close: string, value: string) => enabled ? `${open}${value}${close}` : value;
+const wrap = (open: string, close: string, value: string) =>
+  enabled ? `${open}${value}${close}` : value;
 
 export const ui = {
   dim: (s: string) => wrap("\x1b[2m", "\x1b[22m", s),
@@ -15,9 +16,15 @@ export const ui = {
   white: (s: string) => wrap("\x1b[37m", "\x1b[39m", s),
 };
 
-export function brand(s = "airo"): string { return ui.bold(ui.cyan(s)); }
-export function agentColor(agent: "claude" | "codex", s: string): string { return agent === "claude" ? ui.magenta(s) : ui.cyan(s); }
-export function tierColor(tier: string): string { return tier === "fast" ? ui.green(tier) : tier === "balanced" ? ui.yellow(tier) : ui.red(tier); }
+export function brand(s = "airo"): string {
+  return ui.bold(ui.cyan(s));
+}
+export function agentColor(agent: "claude" | "codex", s: string): string {
+  return agent === "claude" ? ui.magenta(s) : ui.cyan(s);
+}
+export function tierColor(tier: string): string {
+  return tier === "fast" ? ui.green(tier) : tier === "balanced" ? ui.yellow(tier) : ui.red(tier);
+}
 export function statusIcon(kind: "ok" | "error" | "work" | "ask" | "info"): string {
   if (kind === "ok") return ui.green("✓");
   if (kind === "error") return ui.red("✗");
@@ -28,7 +35,7 @@ export function statusIcon(kind: "ok" | "error" | "work" | "ask" | "info"): stri
 export function divider(title?: string): string {
   const body = title ? ` ${title} ` : "";
   const width = Math.max(24, 58 - body.length);
-  return ui.gray(`${"─".repeat(Math.floor(width/2))}${body}${"─".repeat(Math.ceil(width/2))}`);
+  return ui.gray(`${"─".repeat(Math.floor(width / 2))}${body}${"─".repeat(Math.ceil(width / 2))}`);
 }
 export function sectionRule(title: string, width = 68): string {
   const label = ` ${title} `;
@@ -37,22 +44,33 @@ export function sectionRule(title: string, width = 68): string {
   const right = remaining - left;
   return ui.gray(`${"─".repeat(left)}${label}${"─".repeat(right)}`);
 }
-export function promptLabel(): string { return `${ui.green("❯")} `; }
-export function command(s: string): string { return ui.bold(ui.cyan(s)); }
+export function promptLabel(): string {
+  return `${ui.green("❯")} `;
+}
+export function command(s: string): string {
+  return ui.bold(ui.cyan(s));
+}
 
-export function plainText(value: string): string { return value.replace(/\x1b\[[0-9;]*m/g, ""); }
-export function visibleLength(value: string): number { return plainText(value).length; }
+export function plainText(value: string): string {
+  return value.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"), "");
+}
+export function visibleLength(value: string): number {
+  return plainText(value).length;
+}
 
 export function outputWidth(): number {
   return Math.max(24, Math.min(100, process.stdout.columns || 80));
 }
 
 function styleWords(value: string, style: (word: string) => string): string {
-  return value.split(/(\s+)/).map(part => /\s+/.test(part) ? part : style(part)).join("");
+  return value
+    .split(/(\s+)/)
+    .map((part) => (/\s+/.test(part) ? part : style(part)))
+    .join("");
 }
 
 function inlineMarkdown(value: string): string {
-  return value.replace(/(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))/g, token => {
+  return value.replace(/(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))/g, (token) => {
     if (token.startsWith("`")) return styleWords(token.slice(1, -1), ui.cyan);
     if (token.startsWith("**")) return styleWords(token.slice(2, -2), ui.bold);
     const link = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
@@ -161,8 +179,9 @@ export function panel(title: string, lines: string[], width = 68): string {
   const inner = Math.max(24, width - 4);
   const topTitle = ` ${title} `;
   const top = `╭${topTitle}${"─".repeat(Math.max(0, width - topTitle.length - 2))}╮`;
-  const body = lines.map(line => {
-    const clipped = visibleLength(line) > inner ? `${plainText(line).slice(0, Math.max(0, inner - 1))}…` : line;
+  const body = lines.map((line) => {
+    const clipped =
+      visibleLength(line) > inner ? `${plainText(line).slice(0, Math.max(0, inner - 1))}…` : line;
     return `│ ${clipped}${" ".repeat(Math.max(0, inner - visibleLength(clipped)))} │`;
   });
   return [ui.cyan(top), ...body, ui.cyan(`╰${"─".repeat(width - 2)}╯`)].join("\n");

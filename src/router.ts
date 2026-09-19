@@ -2,41 +2,95 @@ import { learningHints } from "./history.js";
 import type { Agent, Effort, ModelTier, RouteResult, RouterConfig, ScoreReason } from "./types.js";
 
 const CLAUDE_SIGNALS: Array<[RegExp, number, string]> = [
-  [/\b(root cause|investigat(e|ion)|diagnos(e|is)|why does|why is|unknown bug)\b/i, 4, "investigation/root-cause task"],
-  [/\b(architecture|architectural|design|trade-?off|strategy)\b/i, 4, "architecture/design reasoning"],
-  [/\b(race condition|deadlock|concurrency|intermittent|flaky|occasionally|nondeterministic)\b/i, 5, "hard-to-reproduce/concurrency issue"],
-  [/\b(legacy|migration|migrate|cross[- ]module|cross[- ]cutting)\b/i, 3, "migration or cross-cutting change"],
+  [
+    /\b(root cause|investigat(e|ion)|diagnos(e|is)|why does|why is|unknown bug)\b/i,
+    4,
+    "investigation/root-cause task",
+  ],
+  [
+    /\b(architecture|architectural|design|trade-?off|strategy)\b/i,
+    4,
+    "architecture/design reasoning",
+  ],
+  [
+    /\b(race condition|deadlock|concurrency|intermittent|flaky|occasionally|nondeterministic)\b/i,
+    5,
+    "hard-to-reproduce/concurrency issue",
+  ],
+  [
+    /\b(legacy|migration|migrate|cross[- ]module|cross[- ]cutting)\b/i,
+    3,
+    "migration or cross-cutting change",
+  ],
   [/\b(large refactor|major refactor|re-?architect|rewrite)\b/i, 4, "large refactor"],
   [/\b(ios|android|xcode|gradle|swift|objective-c|kotlin|jni)\b/i, 2, "native/mobile context"],
-  [/\b(performance|memory leak|profil(e|ing)|security|vulnerability)\b/i, 3, "performance/security investigation"],
-  [/\b(analyze|analyse|explore|understand|audit|review architecture)\b/i, 2, "repo exploration/review"]
+  [
+    /\b(performance|memory leak|profil(e|ing)|security|vulnerability)\b/i,
+    3,
+    "performance/security investigation",
+  ],
+  [
+    /\b(analyze|analyse|explore|understand|audit|review architecture)\b/i,
+    2,
+    "repo exploration/review",
+  ],
 ];
 
 const CODEX_SIGNALS: Array<[RegExp, number, string]> = [
   [/\b(implement|add|create|write|build)\b/i, 2, "clear implementation request"],
   [/\b(unit test|integration test|tests|test coverage)\b/i, 3, "test implementation"],
-  [/\b(rename|lint|format|typing|type error|typescript error|interface|types)\b/i, 3, "mechanical/types task"],
-  [/\b(component|hook|endpoint|api client|schema|serializer|dto)\b/i, 2, "well-scoped implementation"],
-  [/\b(boilerplate|scaffold|generate|dependency update|upgrade package)\b/i, 3, "mechanical/scaffolding task"],
-  [/\b(fix this|change this|update this|replace this)\b/i, 2, "direct localized change"]
+  [
+    /\b(rename|lint|format|typing|type error|typescript error|interface|types)\b/i,
+    3,
+    "mechanical/types task",
+  ],
+  [
+    /\b(component|hook|endpoint|api client|schema|serializer|dto)\b/i,
+    2,
+    "well-scoped implementation",
+  ],
+  [
+    /\b(boilerplate|scaffold|generate|dependency update|upgrade package)\b/i,
+    3,
+    "mechanical/scaffolding task",
+  ],
+  [/\b(fix this|change this|update this|replace this)\b/i, 2, "direct localized change"],
 ];
 
 const DEEP_SIGNALS: Array<[RegExp, number, string]> = [
-  [/\b(architecture|root cause|race condition|deadlock|security|vulnerability|large refactor|rewrite|migration)\b/i, 2, "deep reasoning signal"],
-  [/\b(intermittent|flaky|occasionally|nondeterministic|unknown bug)\b/i, 2, "uncertain/reproduction-heavy task"],
-  [/\b(across|cross[- ]module|without breaking|backward compatible|legacy)\b/i, 1, "cross-cutting constraints"]
+  [
+    /\b(architecture|root cause|race condition|deadlock|security|vulnerability|large refactor|rewrite|migration)\b/i,
+    2,
+    "deep reasoning signal",
+  ],
+  [
+    /\b(intermittent|flaky|occasionally|nondeterministic|unknown bug)\b/i,
+    2,
+    "uncertain/reproduction-heavy task",
+  ],
+  [
+    /\b(across|cross[- ]module|without breaking|backward compatible|legacy)\b/i,
+    1,
+    "cross-cutting constraints",
+  ],
 ];
 
 const FAST_SIGNALS: Array<[RegExp, number, string]> = [
-  [/\b(rename|lint|format|typo|types?|interface|add test|unit test|boilerplate)\b/i, 1, "mechanical/low-risk task"],
-  [/\b(single file|one file|small change|simple|straightforward)\b/i, 1, "explicitly small scope"]
+  [
+    /\b(rename|lint|format|typo|types?|interface|add test|unit test|boilerplate)\b/i,
+    1,
+    "mechanical/low-risk task",
+  ],
+  [/\b(single file|one file|small change|simple|straightforward)\b/i, 1, "explicitly small scope"],
 ];
 
 function add(reasons: ScoreReason[], agent: Agent, points: number, reason: string) {
   reasons.push({ agent, points, reason });
 }
 
-function clampComplexity(n: number) { return Math.max(1, Math.min(5, n)); }
+function clampComplexity(n: number) {
+  return Math.max(1, Math.min(5, n));
+}
 function tierFromComplexity(c: number): ModelTier {
   if (c <= 2) return "fast";
   if (c === 3) return "balanced";
@@ -46,9 +100,12 @@ function effortForTier(tier: ModelTier): Effort {
   return tier === "fast" ? "low" : tier === "balanced" ? "medium" : "high";
 }
 
-const MOST_POWERFUL_MODEL = /\b(?:use|using|choose|pick|select|with)\s+(?:the\s+)?(?:most\s+(?:powerful|powerfull|capable)|strongest)\s+(?:available\s+)?model\b/i;
-const AVOID_MOST_POWERFUL_MODEL = /\b(?:do\s+not|don't|never|avoid)\s+use\s+(?:the\s+)?(?:most\s+(?:powerful|powerfull|capable)|strongest)\s+(?:available\s+)?model\b/i;
-const EXPLICIT_MODEL = /\b(?:use|using|choose|pick|select|with|model)\s+(?:the\s+)?["'`]?((?:(?:gpt|codex|claude)[-._][a-z0-9][-._a-z0-9]*|o[1-9](?:[-._][a-z0-9][-._a-z0-9]*)?|haiku|sonnet|opus))["'`]?\b/i;
+const MOST_POWERFUL_MODEL =
+  /\b(?:use|using|choose|pick|select|with)\s+(?:the\s+)?(?:most\s+(?:powerful|powerfull|capable)|strongest)\s+(?:available\s+)?model\b/i;
+const AVOID_MOST_POWERFUL_MODEL =
+  /\b(?:do\s+not|don't|never|avoid)\s+use\s+(?:the\s+)?(?:most\s+(?:powerful|powerfull|capable)|strongest)\s+(?:available\s+)?model\b/i;
+const EXPLICIT_MODEL =
+  /\b(?:use|using|choose|pick|select|with|model)\s+(?:the\s+)?["'`]?((?:(?:gpt|codex|claude)[-._][a-z0-9][-._a-z0-9]*|o[1-9](?:[-._][a-z0-9][-._a-z0-9]*)?|haiku|sonnet|opus))["'`]?\b/i;
 
 export function requestedModelTier(task: string): ModelTier | undefined {
   if (AVOID_MOST_POWERFUL_MODEL.test(task)) return undefined;
@@ -58,14 +115,22 @@ export function requestedModelTier(task: string): ModelTier | undefined {
 
 export function agentForModel(model: string, config: RouterConfig): Agent | undefined {
   for (const agent of ["claude", "codex"] as const) {
-    if (Object.values(config[agent].models).some(profile => profile.model.toLowerCase() === model.toLowerCase())) return agent;
+    if (
+      Object.values(config[agent].models).some(
+        (profile) => profile.model.toLowerCase() === model.toLowerCase(),
+      )
+    )
+      return agent;
   }
   if (/^(?:claude(?:-|$)|haiku$|sonnet$|opus$)/i.test(model)) return "claude";
   if (/^(?:gpt(?:-|$)|codex(?:-|$)|o[1-9](?:-|$))/i.test(model)) return "codex";
   return undefined;
 }
 
-export function requestedModel(task: string, config: RouterConfig): { agent: Agent; model: string } | undefined {
+export function requestedModel(
+  task: string,
+  config: RouterConfig,
+): { agent: Agent; model: string } | undefined {
   const match = EXPLICIT_MODEL.exec(task);
   if (!match) return undefined;
   const prefix = task.slice(Math.max(0, match.index - 16), match.index);
@@ -96,41 +161,63 @@ export function routeTask(task: string, config: RouterConfig): RouteResult {
         if (rule.modelTier) modelReasons.push(`rule ${rule.name} forced ${rule.modelTier} tier`);
         break;
       }
-    } catch { /* ignore malformed regex */ }
+    } catch {
+      /* ignore malformed regex */
+    }
   }
 
-  for (const [pattern, points, reason] of CLAUDE_SIGNALS) if (pattern.test(task)) add(reasons, "claude", points, reason);
-  for (const [pattern, points, reason] of CODEX_SIGNALS) if (pattern.test(task)) add(reasons, "codex", points, reason);
+  for (const [pattern, points, reason] of CLAUDE_SIGNALS)
+    if (pattern.test(task)) add(reasons, "claude", points, reason);
+  for (const [pattern, points, reason] of CODEX_SIGNALS)
+    if (pattern.test(task)) add(reasons, "codex", points, reason);
 
   const words = task.trim().split(/\s+/).filter(Boolean).length;
   if (words >= 45) add(reasons, "claude", 2, "long/compound request");
   if (words <= 12) add(reasons, "codex", 1, "short/well-scoped request");
-  const compounds = (task.match(/\b(and|also|while|without|across|then|after|before)\b/gi) ?? []).length;
+  const compounds = (task.match(/\b(and|also|while|without|across|then|after|before)\b/gi) ?? [])
+    .length;
   if (compounds >= 3) add(reasons, "claude", 2, "multiple constraints/subtasks");
   if (config.policy === "claude-heavy") add(reasons, "claude", 2, "claude-heavy policy");
   if (config.policy === "codex-heavy") add(reasons, "codex", 2, "codex-heavy policy");
 
   const learned = learningHints(task, config.history);
-  if (learned.agentBoosts.claude !== 0) add(reasons, "claude", learned.agentBoosts.claude, "history feedback on similar tasks");
-  if (learned.agentBoosts.codex !== 0) add(reasons, "codex", learned.agentBoosts.codex, "history feedback on similar tasks");
+  if (learned.agentBoosts.claude !== 0)
+    add(reasons, "claude", learned.agentBoosts.claude, "history feedback on similar tasks");
+  if (learned.agentBoosts.codex !== 0)
+    add(reasons, "codex", learned.agentBoosts.codex, "history feedback on similar tasks");
   modelReasons.push(...learned.notes);
 
-  const claudeScore = reasons.filter(r => r.agent === "claude").reduce((s, r) => s + r.points, 0);
-  const codexScore = reasons.filter(r => r.agent === "codex").reduce((s, r) => s + r.points, 0);
-  const agent = explicitModel?.agent ?? forcedAgent ?? (claudeScore === codexScore ? config.defaultAgent : claudeScore > codexScore ? "claude" : "codex");
+  const claudeScore = reasons.filter((r) => r.agent === "claude").reduce((s, r) => s + r.points, 0);
+  const codexScore = reasons.filter((r) => r.agent === "codex").reduce((s, r) => s + r.points, 0);
+  const agent =
+    explicitModel?.agent ??
+    forcedAgent ??
+    (claudeScore === codexScore
+      ? config.defaultAgent
+      : claudeScore > codexScore
+        ? "claude"
+        : "codex");
 
   let complexity = 2;
   if (words >= 20) complexity += 1;
   if (words >= 55) complexity += 1;
-  for (const [pattern, points, reason] of DEEP_SIGNALS) if (pattern.test(task)) { complexity += points; modelReasons.push(reason); }
-  for (const [pattern, points, reason] of FAST_SIGNALS) if (pattern.test(task)) { complexity -= points; modelReasons.push(reason); }
+  for (const [pattern, points, reason] of DEEP_SIGNALS)
+    if (pattern.test(task)) {
+      complexity += points;
+      modelReasons.push(reason);
+    }
+  for (const [pattern, points, reason] of FAST_SIGNALS)
+    if (pattern.test(task)) {
+      complexity -= points;
+      modelReasons.push(reason);
+    }
   if (compounds >= 3) complexity += 1;
   complexity = clampComplexity(complexity);
 
   let modelTier = userRequestedTier ?? forcedTier ?? tierFromComplexity(complexity);
   if (!userRequestedTier && !forcedTier && config.history.learningEnabled) {
     const scores = learned.tierBoosts;
-    const best = (Object.keys(scores) as ModelTier[]).sort((a,b) => scores[b] - scores[a])[0];
+    const best = (Object.keys(scores) as ModelTier[]).sort((a, b) => scores[b] - scores[a])[0];
     if (scores[best] >= 1.25 && scores[best] > scores[modelTier] + 0.5) {
       modelReasons.push(`history favored ${best} tier for similar tasks`);
       modelTier = best;
@@ -140,12 +227,24 @@ export function routeTask(task: string, config: RouterConfig): RouteResult {
   const profile = config[agent].models[modelTier];
   const effort = forcedEffort ?? profile.effort ?? effortForTier(modelTier);
   modelReasons.unshift(`complexity ${complexity}/5 → ${modelTier} tier`);
-  if (userRequestedTier) modelReasons.unshift(`user explicitly requested the most powerful model → ${userRequestedTier} tier`);
+  if (userRequestedTier)
+    modelReasons.unshift(
+      `user explicitly requested the most powerful model → ${userRequestedTier} tier`,
+    );
   if (explicitModel) modelReasons.unshift(`user explicitly requested ${explicitModel.model}`);
 
   return {
-    agent, modelTier, userRequestedTier, userRequestedModel: explicitModel?.model,
-    model: explicitModel?.model ?? profile.model, effort, complexity,
-    claudeScore, codexScore, reasons, modelReasons, matchedRule
+    agent,
+    modelTier,
+    userRequestedTier,
+    userRequestedModel: explicitModel?.model,
+    model: explicitModel?.model ?? profile.model,
+    effort,
+    complexity,
+    claudeScore,
+    codexScore,
+    reasons,
+    modelReasons,
+    matchedRule,
   };
 }

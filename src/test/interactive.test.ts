@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cleanDroppedPath, isSupportedAttachmentPath, parseFeedbackAnswer, parseInteractiveInput, taskArgs } from "../interactive.js";
+import {
+  cleanDroppedPath,
+  isSupportedAttachmentPath,
+  parseFeedbackAnswer,
+  parseInteractiveInput,
+  taskArgs,
+} from "../interactive.js";
 
 test("normalizes paths pasted by terminal drag and drop", () => {
   assert.equal(cleanDroppedPath('"/tmp/My Notes/report.pdf"'), "/tmp/My Notes/report.pdf");
@@ -10,11 +16,17 @@ test("normalizes paths pasted by terminal drag and drop", () => {
 });
 
 test("treats regular interactive input as a task", () => {
-  assert.deepEqual(parseInteractiveInput("  fix the parser  "), { kind: "task", task: "fix the parser" });
+  assert.deepEqual(parseInteractiveInput("  fix the parser  "), {
+    kind: "task",
+    task: "fix the parser",
+  });
 });
 
 test("parses interactive preference commands", () => {
-  assert.deepEqual(parseInteractiveInput("/mode adaptive"), { kind: "set-mode", value: "adaptive" });
+  assert.deepEqual(parseInteractiveInput("/mode adaptive"), {
+    kind: "set-mode",
+    value: "adaptive",
+  });
   assert.deepEqual(parseInteractiveInput("/agent claude"), { kind: "set-agent", value: "claude" });
   assert.deepEqual(parseInteractiveInput("/tier auto"), { kind: "set-tier", value: undefined });
   assert.deepEqual(parseInteractiveInput("/log verbose"), { kind: "set-log", value: "verbose" });
@@ -28,11 +40,24 @@ test("parses interactive preference commands", () => {
   assert.deepEqual(parseInteractiveInput("/account"), { kind: "account" });
   assert.deepEqual(parseInteractiveInput("/usage 5"), { kind: "usage", limit: 5 });
   assert.deepEqual(parseInteractiveInput("/logs"), { kind: "logs" });
-  assert.deepEqual(parseInteractiveInput("/attach /tmp/screenshot.png"), { kind: "attach", path: "/tmp/screenshot.png" });
-  assert.deepEqual(parseInteractiveInput("/attach /tmp/notes.md"), { kind: "attach", path: "/tmp/notes.md" });
-  assert.deepEqual(parseInteractiveInput("/feedback good shipped"), { kind: "feedback", rating: "good", note: "shipped" });
+  assert.deepEqual(parseInteractiveInput("/attach /tmp/screenshot.png"), {
+    kind: "attach",
+    path: "/tmp/screenshot.png",
+  });
+  assert.deepEqual(parseInteractiveInput("/attach /tmp/notes.md"), {
+    kind: "attach",
+    path: "/tmp/notes.md",
+  });
+  assert.deepEqual(parseInteractiveInput("/feedback good shipped"), {
+    kind: "feedback",
+    rating: "good",
+    note: "shipped",
+  });
   assert.deepEqual(parseInteractiveInput("/clear"), { kind: "clear" });
-  assert.deepEqual(parseInteractiveInput("/new named session"), { kind: "new", title: "named session" });
+  assert.deepEqual(parseInteractiveInput("/new named session"), {
+    kind: "new",
+    title: "named session",
+  });
   assert.deepEqual(parseInteractiveInput("/new"), { kind: "new", title: undefined });
   assert.deepEqual(parseInteractiveInput("/mode single"), { kind: "set-mode", value: "single" });
   assert.deepEqual(parseInteractiveInput("/agent auto"), { kind: "set-agent", value: "auto" });
@@ -41,7 +66,10 @@ test("parses interactive preference commands", () => {
 });
 
 test("returns guidance for invalid interactive commands", () => {
-  assert.deepEqual(parseInteractiveInput("/mode fast"), { kind: "error", message: "Usage: /mode auto|adaptive|single" });
+  assert.deepEqual(parseInteractiveInput("/mode fast"), {
+    kind: "error",
+    message: "Usage: /mode auto|adaptive|single",
+  });
   assert.match(parseInteractiveInput("/agent other").kind, /error/);
   assert.match(parseInteractiveInput("/tier other").kind, /error/);
   assert.match(parseInteractiveInput("/log other").kind, /error/);
@@ -49,19 +77,45 @@ test("returns guidance for invalid interactive commands", () => {
 });
 
 test("builds minimal CLI arguments for automatic preferences", () => {
-  assert.deepEqual(taskArgs("inspect", { mode: "auto", agent: "auto", logLevel: "live" }), ["--continue", "--log", "live", "inspect"]);
-  assert.deepEqual(taskArgs("inspect", { mode: "single", agent: "claude", logLevel: "live" }), ["--continue", "--single", "--agent", "claude", "--log", "live", "inspect"]);
+  assert.deepEqual(taskArgs("inspect", { mode: "auto", agent: "auto", logLevel: "live" }), [
+    "--continue",
+    "--log",
+    "live",
+    "inspect",
+  ]);
+  assert.deepEqual(taskArgs("inspect", { mode: "single", agent: "claude", logLevel: "live" }), [
+    "--continue",
+    "--single",
+    "--agent",
+    "claude",
+    "--log",
+    "live",
+    "inspect",
+  ]);
   assert.equal(parseFeedbackAnswer("n"), "bad");
   assert.equal(parseFeedbackAnswer("maybe"), undefined);
 });
 
 test("builds CLI arguments from interactive preferences", () => {
-  assert.deepEqual(taskArgs("ship it", {
-    mode: "adaptive",
-    agent: "codex",
-    tier: "deep",
-    logLevel: "compact",
-  }), ["--continue", "--adaptive", "--agent", "codex", "--tier", "deep", "--log", "compact", "ship it"]);
+  assert.deepEqual(
+    taskArgs("ship it", {
+      mode: "adaptive",
+      agent: "codex",
+      tier: "deep",
+      logLevel: "compact",
+    }),
+    [
+      "--continue",
+      "--adaptive",
+      "--agent",
+      "codex",
+      "--tier",
+      "deep",
+      "--log",
+      "compact",
+      "ship it",
+    ],
+  );
 });
 
 test("parses simple post-run feedback", () => {

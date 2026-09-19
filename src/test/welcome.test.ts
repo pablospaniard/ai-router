@@ -14,20 +14,25 @@ test("introduces AIRO and its initial model setup on first run", () => {
   assert.match(welcome, /codex\s+fast\s+gpt-5\.6-luna\s+low/);
   assert.match(welcome, /claude\s+fast\s+haiku\s+low/);
   assert.match(welcome, /Tie-break provider: codex/);
-  assert.match(welcome, /Choose models for these tiers, or press Enter to keep the displayed defaults/);
+  assert.match(
+    welcome,
+    /Choose models for these tiers, or press Enter to keep the displayed defaults/,
+  );
   assert.doesNotMatch(welcome, /Next/);
   assert.match(welcome, /~\/.config\/airo\/config\.json/);
   assert.match(welcome, /airo setup/);
   assert.match(welcome, /airo models/);
 
-  const sectionTitles = welcome.split("\n").filter(line => /(?:Welcome|Initial defaults)/.test(line));
+  const sectionTitles = welcome
+    .split("\n")
+    .filter((line) => /(?:Welcome|Initial defaults)/.test(line));
   assert.equal(sectionTitles.length, 2);
-  assert.equal(new Set(sectionTitles.map(line => line.length)).size, 1);
+  assert.equal(new Set(sectionTitles.map((line) => line.length)).size, 1);
 
   const midpoint = (line: string) => line.search(/\S/) + line.trim().length / 2;
   const lines = welcome.split("\n");
-  const logoLine = lines.find(line => line.includes("█████╗"));
-  const subtitleLine = lines.find(line => line.includes("Adaptive Intelligence"));
+  const logoLine = lines.find((line) => line.includes("█████╗"));
+  const subtitleLine = lines.find((line) => line.includes("Adaptive Intelligence"));
   assert.ok(logoLine && subtitleLine);
   assert.ok(Math.abs(midpoint(logoLine) - midpoint(sectionTitles[0])) <= 0.5);
   assert.ok(Math.abs(midpoint(subtitleLine) - midpoint(sectionTitles[0])) <= 0.5);

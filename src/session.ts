@@ -16,16 +16,24 @@ function sessionsDir(): string {
   return dir;
 }
 
-function activeMapPath(): string { return path.join(rootDir(), "active-sessions.json"); }
-function sessionPath(id: string): string { return path.join(sessionsDir(), `${id}.json`); }
-
-function readActiveMap(): Record<string,string> {
-  const p = activeMapPath();
-  if (!fs.existsSync(p)) return {};
-  try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return {}; }
+function activeMapPath(): string {
+  return path.join(rootDir(), "active-sessions.json");
+}
+function sessionPath(id: string): string {
+  return path.join(sessionsDir(), `${id}.json`);
 }
 
-function writeActiveMap(map: Record<string,string>) {
+function readActiveMap(): Record<string, string> {
+  const p = activeMapPath();
+  if (!fs.existsSync(p)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function writeActiveMap(map: Record<string, string>) {
   fs.writeFileSync(activeMapPath(), JSON.stringify(map, null, 2) + "\n");
 }
 
@@ -37,7 +45,7 @@ export function createSession(originalTask: string, cwd = process.cwd()): Sessio
     createdAt: now,
     updatedAt: now,
     originalTask,
-    turns: []
+    turns: [],
   };
   saveSession(s);
   setActiveSession(s.cwd, s.sessionId);
@@ -64,7 +72,11 @@ export function setActiveSession(cwd: string, id: string) {
 export function getActiveSession(cwd = process.cwd()): SessionState | undefined {
   const id = readActiveMap()[path.resolve(cwd)];
   if (!id) return undefined;
-  try { return loadSession(id); } catch { return undefined; }
+  try {
+    return loadSession(id);
+  } catch {
+    return undefined;
+  }
 }
 
 export function clearActiveSession(cwd = process.cwd()) {
@@ -90,10 +102,17 @@ export function compactSessionContext(s: SessionState, maxTurns = 6): string {
 }
 
 export function listSessions(cwd = process.cwd()): SessionState[] {
-  return fs.readdirSync(sessionsDir()).filter((f: string) => f.endsWith(".json")).map((f: string) => {
-    try { return JSON.parse(fs.readFileSync(path.join(sessionsDir(), f), "utf8")) as SessionState; }
-    catch { return undefined; }
-  }).filter((x: SessionState | undefined): x is SessionState => Boolean(x))
+  return fs
+    .readdirSync(sessionsDir())
+    .filter((f: string) => f.endsWith(".json"))
+    .map((f: string) => {
+      try {
+        return JSON.parse(fs.readFileSync(path.join(sessionsDir(), f), "utf8")) as SessionState;
+      } catch {
+        return undefined;
+      }
+    })
+    .filter((x: SessionState | undefined): x is SessionState => Boolean(x))
     .filter((s: SessionState) => path.resolve(s.cwd) === path.resolve(cwd))
-    .sort((a: SessionState,b: SessionState) => b.updatedAt.localeCompare(a.updatedAt));
+    .sort((a: SessionState, b: SessionState) => b.updatedAt.localeCompare(a.updatedAt));
 }

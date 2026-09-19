@@ -11,7 +11,10 @@ test("explicit AIRO default-model overrides are deterministic", () => {
   config.claude.defaultModel = "fable";
   config.codex.defaultModel = "gpt-default";
 
-  assert.deepEqual(detectDefaultModels(config, "/missing"), { claude: "fable", codex: "gpt-default" });
+  assert.deepEqual(detectDefaultModels(config, "/missing"), {
+    claude: "fable",
+    codex: "gpt-default",
+  });
 });
 
 test("detects layered provider defaults and authenticated accounts", () => {
@@ -25,13 +28,22 @@ test("detects layered provider defaults and authenticated accounts", () => {
   fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
   fs.mkdirSync(path.join(repo, ".claude"), { recursive: true });
   fs.mkdirSync(codexHome, { recursive: true });
-  fs.writeFileSync(path.join(home, ".claude", "settings.json"), JSON.stringify({ model: "home-model" }));
+  fs.writeFileSync(
+    path.join(home, ".claude", "settings.json"),
+    JSON.stringify({ model: "home-model" }),
+  );
   fs.writeFileSync(path.join(repo, ".claude", "settings.json"), "bad json");
-  fs.writeFileSync(path.join(repo, ".claude", "settings.local.json"), JSON.stringify({ model: "local-model" }));
+  fs.writeFileSync(
+    path.join(repo, ".claude", "settings.local.json"),
+    JSON.stringify({ model: "local-model" }),
+  );
   fs.writeFileSync(path.join(codexHome, "config.toml"), `model = "codex-model"\n`);
   const claude = path.join(home, "claude");
   const codex = path.join(home, "codex");
-  fs.writeFileSync(claude, `#!/bin/sh\nprintf '{"loggedIn":true,"emailAddress":"user@example.com","authMethod":"oauth"}'\n`);
+  fs.writeFileSync(
+    claude,
+    `#!/bin/sh\nprintf '{"loggedIn":true,"emailAddress":"user@example.com","authMethod":"oauth"}'\n`,
+  );
   fs.writeFileSync(codex, "#!/bin/sh\nprintf 'Logged in using ChatGPT'\n");
   fs.chmodSync(claude, 0o755);
   fs.chmodSync(codex, 0o755);
@@ -41,14 +53,22 @@ test("detects layered provider defaults and authenticated accounts", () => {
     delete config.codex.defaultModel;
     config.claude.command = claude;
     config.codex.command = codex;
-    assert.deepEqual(detectDefaultModels(config, repo), { claude: "local-model", codex: "codex-model" });
+    assert.deepEqual(detectDefaultModels(config, repo), {
+      claude: "local-model",
+      codex: "codex-model",
+    });
     const accounts = inspectAccounts(config, repo);
-    assert.deepEqual(accounts.map(account => account.authenticated), [true, true]);
+    assert.deepEqual(
+      accounts.map((account) => account.authenticated),
+      [true, true],
+    );
     assert.equal(accounts[0].identity, "user@example.com");
     assert.equal(accounts[1].authMethod, "ChatGPT");
   } finally {
-    if (previousHome === undefined) delete process.env.HOME; else process.env.HOME = previousHome;
-    if (previousCodexHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previousCodexHome;
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = previousCodexHome;
     fs.rmSync(home, { recursive: true, force: true });
   }
 });

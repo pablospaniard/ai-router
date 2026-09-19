@@ -31,14 +31,31 @@ export type InteractiveAction =
   | { kind: "error"; message: string };
 
 export const INTERACTIVE_COMMANDS = [
-  "/help", "/status", "/new", "/sessions", "/models", "/account", "/usage", "/logs", "/attach", "/feedback", "/mode",
-  "/agent", "/tier", "/log", "/clear", "/exit"
+  "/help",
+  "/status",
+  "/new",
+  "/sessions",
+  "/models",
+  "/account",
+  "/usage",
+  "/logs",
+  "/attach",
+  "/feedback",
+  "/mode",
+  "/agent",
+  "/tier",
+  "/log",
+  "/clear",
+  "/exit",
 ];
 
 /** Normalize the path most terminals insert when a file is dragged into readline. */
 export function cleanDroppedPath(input: string): string {
   const value = input.trim();
-  if ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))) {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
     return value.slice(1, -1).replace(/\\([\\"'])/g, "$1");
   }
   return value;
@@ -65,36 +82,44 @@ export function parseInteractiveInput(input: string): InteractiveAction {
   if (command === "/account") return { kind: "account" };
   if (command === "/usage") {
     const limit = args[0] === undefined ? undefined : Number(args[0]);
-    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) return { kind: "error", message: "Usage: /usage [limit]" };
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1))
+      return { kind: "error", message: "Usage: /usage [limit]" };
     return { kind: "usage", limit };
   }
   if (command === "/logs") return { kind: "logs" };
   if (command === "/attach") {
     const path = args.join(" ").trim();
-    return path ? { kind: "attach", path } : { kind: "error", message: "Usage: /attach <file-path>" };
+    return path
+      ? { kind: "attach", path }
+      : { kind: "error", message: "Usage: /attach <file-path>" };
   }
   if (command === "/feedback") {
-    if (first !== "good" && first !== "bad") return { kind: "error", message: "Usage: /feedback good|bad [note]" };
+    if (first !== "good" && first !== "bad")
+      return { kind: "error", message: "Usage: /feedback good|bad [note]" };
     return { kind: "feedback", rating: first, note: args.slice(1).join(" ") || undefined };
   }
   if (command === "/clear") return { kind: "clear" };
   if (command === "/new") return { kind: "new", title: args.join(" ").trim() || undefined };
 
   if (command === "/mode") {
-    if (first === "auto" || first === "adaptive" || first === "single") return { kind: "set-mode", value: first };
+    if (first === "auto" || first === "adaptive" || first === "single")
+      return { kind: "set-mode", value: first };
     return { kind: "error", message: "Usage: /mode auto|adaptive|single" };
   }
   if (command === "/agent") {
-    if (first === "auto" || first === "claude" || first === "codex") return { kind: "set-agent", value: first };
+    if (first === "auto" || first === "claude" || first === "codex")
+      return { kind: "set-agent", value: first };
     return { kind: "error", message: "Usage: /agent auto|claude|codex" };
   }
   if (command === "/tier") {
     if (first === "auto") return { kind: "set-tier", value: undefined };
-    if (first === "fast" || first === "balanced" || first === "deep") return { kind: "set-tier", value: first };
+    if (first === "fast" || first === "balanced" || first === "deep")
+      return { kind: "set-tier", value: first };
     return { kind: "error", message: "Usage: /tier auto|fast|balanced|deep" };
   }
   if (command === "/log") {
-    if (first === "compact" || first === "live" || first === "verbose") return { kind: "set-log", value: first };
+    if (first === "compact" || first === "live" || first === "verbose")
+      return { kind: "set-log", value: first };
     return { kind: "error", message: "Usage: /log compact|live|verbose" };
   }
   return { kind: "error", message: `Unknown command: ${rawCommand}. Use /help to list commands.` };

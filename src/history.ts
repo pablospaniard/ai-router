@@ -5,7 +5,35 @@ import type { Agent, FeedbackRating, HistoryConfig, HistoryRecord, ModelTier } f
 import { dataRootDir } from "./paths.js";
 
 const STOP = new Set([
-  "the","a","an","and","or","to","of","in","on","for","with","this","that","it","is","are","be","from","by","as","at","we","i","my","our","please","can","you","into"
+  "the",
+  "a",
+  "an",
+  "and",
+  "or",
+  "to",
+  "of",
+  "in",
+  "on",
+  "for",
+  "with",
+  "this",
+  "that",
+  "it",
+  "is",
+  "are",
+  "be",
+  "from",
+  "by",
+  "as",
+  "at",
+  "we",
+  "i",
+  "my",
+  "our",
+  "please",
+  "can",
+  "you",
+  "into",
 ]);
 
 export function historyPath(config: HistoryConfig): string {
@@ -31,12 +59,16 @@ export function readHistory(config: HistoryConfig): HistoryRecord[] {
   if (!config.enabled) return [];
   const file = historyPath(config);
   if (!fs.existsSync(file)) return [];
-  return fs.readFileSync(file, "utf8")
+  return fs
+    .readFileSync(file, "utf8")
     .split(/\r?\n/)
     .filter(Boolean)
     .flatMap((line: string) => {
-      try { return [JSON.parse(line) as HistoryRecord]; }
-      catch { return []; }
+      try {
+        return [JSON.parse(line) as HistoryRecord];
+      } catch {
+        return [];
+      }
     });
 }
 
@@ -44,7 +76,7 @@ export function setFeedback(
   config: HistoryConfig,
   rating: FeedbackRating,
   id?: string,
-  note?: string
+  note?: string,
 ): HistoryRecord[] {
   const records = readHistory(config);
   if (!records.length) throw new Error("No routing history yet.");
@@ -52,13 +84,14 @@ export function setFeedback(
 
   if (!id || id === "last") {
     const last = records[records.length - 1];
-    if (last.runId) targets = records.map((r, i) => r.runId === last.runId ? i : -1).filter(i => i >= 0);
+    if (last.runId)
+      targets = records.map((r, i) => (r.runId === last.runId ? i : -1)).filter((i) => i >= 0);
     else targets = [records.length - 1];
   } else {
-    const byRun = records.map((r, i) => r.runId === id ? i : -1).filter(i => i >= 0);
+    const byRun = records.map((r, i) => (r.runId === id ? i : -1)).filter((i) => i >= 0);
     if (byRun.length) targets = byRun;
     else {
-      const index = records.findIndex(r => r.id === id);
+      const index = records.findIndex((r) => r.id === id);
       if (index >= 0) targets = [index];
     }
   }
@@ -69,17 +102,18 @@ export function setFeedback(
   }
   const file = historyPath(config);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, records.map(r => JSON.stringify(r)).join("\n") + "\n");
-  return targets.map(i => records[i]);
+  fs.writeFileSync(file, records.map((r) => JSON.stringify(r)).join("\n") + "\n");
+  return targets.map((i) => records[i]);
 }
 
 function tokens(s: string): Set<string> {
   const words = s.toLowerCase().match(/[a-z0-9_+#.-]{2,}/g) ?? [];
-  return new Set(words.filter(w => !STOP.has(w)));
+  return new Set(words.filter((w) => !STOP.has(w)));
 }
 
 export function similarity(a: string, b: string): number {
-  const A = tokens(a), B = tokens(b);
+  const A = tokens(a),
+    B = tokens(b);
   if (!A.size || !B.size) return 0;
   let intersection = 0;
   for (const x of A) if (B.has(x)) intersection++;
@@ -97,14 +131,14 @@ export function learningHints(task: string, config: HistoryConfig): LearningHint
   const empty: LearningHint = {
     agentBoosts: { claude: 0, codex: 0 },
     tierBoosts: { fast: 0, balanced: 0, deep: 0 },
-    notes: []
+    notes: [],
   };
   if (!config.enabled || !config.learningEnabled) return empty;
 
   const similar = readHistory(config)
-    .filter(r => r.feedback)
-    .map(r => ({ r, sim: similarity(task, r.task) }))
-    .filter(x => x.sim >= config.similarityThreshold)
+    .filter((r) => r.feedback)
+    .map((r) => ({ r, sim: similarity(task, r.task) }))
+    .filter((x) => x.sim >= config.similarityThreshold)
     .sort((a, b) => b.sim - a.sim)
     .slice(0, 30);
 
@@ -116,7 +150,9 @@ export function learningHints(task: string, config: HistoryConfig): LearningHint
 
   if (similar.length) {
     const best = similar[0];
-    empty.notes.push(`learned from ${similar.length} similar rated phase(s); closest ${(best.sim * 100).toFixed(0)}%`);
+    empty.notes.push(
+      `learned from ${similar.length} similar rated phase(s); closest ${(best.sim * 100).toFixed(0)}%`,
+    );
   }
   return empty;
 }

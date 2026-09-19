@@ -12,7 +12,10 @@ export function migrateLegacyPaths(home = os.homedir()): { migrated: string[]; e
   const migrated: string[] = [];
   const errors: string[] = [];
   const pairs = [
-    [path.join(home, ".config", "ai-router", "config.json"), path.join(home, ".config", "airo", "config.json")],
+    [
+      path.join(home, ".config", "ai-router", "config.json"),
+      path.join(home, ".config", "airo", "config.json"),
+    ],
     [path.join(home, ".local", "share", "ai-router"), path.join(home, ".local", "share", "airo")],
   ] as const;
 

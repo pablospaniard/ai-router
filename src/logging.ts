@@ -1,7 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Agent, LogLevel, PhaseKind } from "./types.js";
-import { agentColor, divider, outputWidth, renderTerminalMarkdown, sectionRule, statusIcon, ui } from "./ui.js";
+import {
+  agentColor,
+  divider,
+  outputWidth,
+  renderTerminalMarkdown,
+  sectionRule,
+  statusIcon,
+  ui,
+} from "./ui.js";
 import { dataRootDir } from "./paths.js";
 
 export interface RunLoggerOptions {
@@ -64,9 +72,12 @@ export class RunLogger {
   }
 
   private prettyStatus(message: string): string {
-    if (message.includes(" complete")) return `${ui.gray(nowTime())} ${statusIcon("ok")} ${ui.bold("airo")} ${message}`;
-    if (message.includes("phase ") || message.includes("started")) return `${ui.gray(nowTime())} ${statusIcon("work")} ${ui.bold("airo")} ${message}`;
-    if (message.includes("question") || message.includes("input")) return `${ui.gray(nowTime())} ${statusIcon("ask")} ${ui.bold("airo")} ${ui.yellow(message)}`;
+    if (message.includes(" complete"))
+      return `${ui.gray(nowTime())} ${statusIcon("ok")} ${ui.bold("airo")} ${message}`;
+    if (message.includes("phase ") || message.includes("started"))
+      return `${ui.gray(nowTime())} ${statusIcon("work")} ${ui.bold("airo")} ${message}`;
+    if (message.includes("question") || message.includes("input"))
+      return `${ui.gray(nowTime())} ${statusIcon("ask")} ${ui.bold("airo")} ${ui.yellow(message)}`;
     return `${ui.gray(nowTime())} ${statusIcon("info")} ${ui.bold("airo")} ${message}`;
   }
 
@@ -79,17 +90,24 @@ export class RunLogger {
   metadata(message: string) {
     const line = `${nowTime()} [meta] ${message}`;
     this.append(this.combinedPath, line);
-    if (this.level === "verbose") this.console(`${ui.gray(nowTime())} ${ui.gray("[meta]")} ${ui.dim(message)}`);
+    if (this.level === "verbose")
+      this.console(`${ui.gray(nowTime())} ${ui.gray("[meta]")} ${ui.dim(message)}`);
   }
 
   phaseFile(meta: PhaseLogMeta): string {
     const index = String(meta.phaseIndex).padStart(2, "0");
-    return path.join(this.runDir, `${index}-${safeName(meta.phaseKind)}-${safeName(meta.agent)}.log`);
+    return path.join(
+      this.runDir,
+      `${index}-${safeName(meta.phaseKind)}-${safeName(meta.agent)}.log`,
+    );
   }
 
   eventsFile(meta: PhaseLogMeta): string {
     const index = String(meta.phaseIndex).padStart(2, "0");
-    return path.join(this.runDir, `${index}-${safeName(meta.phaseKind)}-${safeName(meta.agent)}.events.jsonl`);
+    return path.join(
+      this.runDir,
+      `${index}-${safeName(meta.phaseKind)}-${safeName(meta.agent)}.events.jsonl`,
+    );
   }
 
   rawEvent(meta: PhaseLogMeta, rawLine: string) {
@@ -105,13 +123,18 @@ export class RunLogger {
       this.append(this.combinedPath, line);
       if (this.level !== "compact") {
         const time = ui.gray(nowTime());
-        if (category === "message") this.console(`${time} ${agentColor(meta.agent, "▌")} ${ui.white(text)}`);
+        if (category === "message")
+          this.console(`${time} ${agentColor(meta.agent, "▌")} ${ui.white(text)}`);
         else if (category === "tool") this.console(`${time} ${ui.cyan("⚙ tool ")} ${ui.dim(text)}`);
-        else if (category === "file") this.console(`${time} ${ui.blue("✎ edit ")} ${ui.cyan(text)}`);
+        else if (category === "file")
+          this.console(`${time} ${ui.blue("✎ edit ")} ${ui.cyan(text)}`);
         else if (category === "error") this.console(`${time} ${ui.red("✗ error")} ${ui.red(text)}`);
-        else if (category === "retry") this.console(`${time} ${ui.yellow("↻ retry")} ${ui.yellow(text)}`);
-        else if (category === "result") this.console(`${time} ${ui.gray("└ done ")} ${ui.dim(text)}`);
-        else if (category === "system") this.console(`${time} ${ui.gray("· sys  ")} ${ui.dim(text)}`);
+        else if (category === "retry")
+          this.console(`${time} ${ui.yellow("↻ retry")} ${ui.yellow(text)}`);
+        else if (category === "result")
+          this.console(`${time} ${ui.gray("└ done ")} ${ui.dim(text)}`);
+        else if (category === "system")
+          this.console(`${time} ${ui.gray("· sys  ")} ${ui.dim(text)}`);
         else this.console(`${time} ${ui.gray("· info ")} ${ui.dim(text)}`);
       }
     }
@@ -124,7 +147,10 @@ export class RunLogger {
       const line = `${nowTime()} [${meta.phaseKind}][${meta.agent}][stderr] ${text}`;
       this.append(this.phaseFile(meta), line);
       this.append(this.combinedPath, line);
-      if (this.level === "verbose") this.console(`${ui.gray(nowTime())} ${agentColor(meta.agent, `[${meta.phaseKind}]`)} ${agentColor(meta.agent, `[${meta.agent}]`)} ${ui.red("[stderr]")} ${ui.red(text)}`);
+      if (this.level === "verbose")
+        this.console(
+          `${ui.gray(nowTime())} ${agentColor(meta.agent, `[${meta.phaseKind}]`)} ${agentColor(meta.agent, `[${meta.agent}]`)} ${ui.red("[stderr]")} ${ui.red(text)}`,
+        );
     }
   }
 
@@ -132,14 +158,20 @@ export class RunLogger {
     const message = `phase ${meta.phaseIndex}/${meta.phaseTotal}: ${meta.phaseKind} → ${meta.agent}/${meta.model} effort=${meta.effort} tier=${meta.tier}`;
     this.append(this.combinedPath, `${nowTime()} [airo] ${message}`);
     this.console("");
-    this.console(sectionRule(`Phase ${meta.phaseIndex}/${meta.phaseTotal} · ${meta.phaseKind} · ${meta.agent}/${meta.model}`));
+    this.console(
+      sectionRule(
+        `Phase ${meta.phaseIndex}/${meta.phaseTotal} · ${meta.phaseKind} · ${meta.agent}/${meta.model}`,
+      ),
+    );
     this.console(`${ui.gray(nowTime())} ${ui.gray(`effort=${meta.effort} · tier=${meta.tier}`)}`);
     this.metadata(`phase-log=${this.phaseFile(meta)}`);
     this.metadata(`events=${this.eventsFile(meta)}`);
   }
 
   phaseEnd(meta: PhaseLogMeta, exitCode: number, durationMs: number) {
-    this.status(`phase ${meta.phaseIndex}/${meta.phaseTotal} complete: ${meta.phaseKind} exit=${exitCode} duration=${(durationMs/1000).toFixed(1)}s`);
+    this.status(
+      `phase ${meta.phaseIndex}/${meta.phaseTotal} complete: ${meta.phaseKind} exit=${exitCode} duration=${(durationMs / 1000).toFixed(1)}s`,
+    );
   }
 
   question(question: string) {
@@ -155,7 +187,10 @@ export class RunLogger {
     if (!clean) return;
     const file = path.join(this.runDir, "final-output.txt");
     if (this.persist) fs.writeFileSync(file, `${clean}\n`);
-    this.append(this.combinedPath, `${nowTime()} [airo][final] ${clean.replace(/\n/g, "\n[final] ")}`);
+    this.append(
+      this.combinedPath,
+      `${nowTime()} [airo][final] ${clean.replace(/\n/g, "\n[final] ")}`,
+    );
 
     const width = outputWidth();
     this.console("");
@@ -171,7 +206,9 @@ export function logsRoot(): string {
 
 export function findRunLogs(runId: string): string | undefined {
   const root = dataDir();
-  const sessions = fs.readdirSync(root, { withFileTypes: true }).filter((x: any) => x.isDirectory());
+  const sessions = fs
+    .readdirSync(root, { withFileTypes: true })
+    .filter((x: any) => x.isDirectory());
   for (const session of sessions) {
     const candidate = path.join(root, session.name, `run-${safeName(runId)}`);
     if (fs.existsSync(candidate)) return candidate;
@@ -182,14 +219,18 @@ export function findRunLogs(runId: string): string | undefined {
 export function recentRunDirs(limit = 20): Array<{ runId: string; path: string; mtime: Date }> {
   const root = dataDir();
   const out: Array<{ runId: string; path: string; mtime: Date }> = [];
-  for (const session of fs.readdirSync(root, { withFileTypes: true }).filter((x: any) => x.isDirectory())) {
+  for (const session of fs
+    .readdirSync(root, { withFileTypes: true })
+    .filter((x: any) => x.isDirectory())) {
     const sessionPath = path.join(root, session.name);
-    for (const run of fs.readdirSync(sessionPath, { withFileTypes: true }).filter((x: any) => x.isDirectory() && x.name.startsWith("run-"))) {
+    for (const run of fs
+      .readdirSync(sessionPath, { withFileTypes: true })
+      .filter((x: any) => x.isDirectory() && x.name.startsWith("run-"))) {
       const p = path.join(sessionPath, run.name);
       out.push({ runId: run.name.slice(4), path: p, mtime: fs.statSync(p).mtime });
     }
   }
-  return out.sort((a,b) => b.mtime.getTime() - a.mtime.getTime()).slice(0, limit);
+  return out.sort((a, b) => b.mtime.getTime() - a.mtime.getTime()).slice(0, limit);
 }
 
 export async function followFile(file: string): Promise<void> {
@@ -209,7 +250,10 @@ export async function followFile(file: string): Promise<void> {
   printNew();
   await new Promise<void>((resolve) => {
     const watcher = fs.watch(file, () => printNew());
-    const stop = () => { watcher.close(); resolve(); };
+    const stop = () => {
+      watcher.close();
+      resolve();
+    };
     process.once("SIGINT", stop);
     process.once("SIGTERM", stop);
   });

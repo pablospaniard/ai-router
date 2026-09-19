@@ -3,7 +3,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { configCandidates, DEFAULT_CONFIG, globalConfigPath, loadConfig, writeGlobalConfig, writeProjectConfig } from "../config.js";
+import {
+  configCandidates,
+  DEFAULT_CONFIG,
+  globalConfigPath,
+  loadConfig,
+  writeGlobalConfig,
+  writeProjectConfig,
+} from "../config.js";
 
 test("prefers AIRO project config while retaining the legacy filename", () => {
   const cwd = path.resolve("fixture-project");
@@ -18,13 +25,16 @@ test("prefers AIRO project config while retaining the legacy filename", () => {
 test("loads and deeply merges project configuration", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-config-"));
   try {
-    fs.writeFileSync(path.join(dir, ".airo.json"), JSON.stringify({
-      policy: "claude-heavy",
-      claude: { models: { fast: { model: "custom-haiku" } } },
-      history: { enabled: false },
-      logging: { level: "compact" },
-      rules: "invalid",
-    }));
+    fs.writeFileSync(
+      path.join(dir, ".airo.json"),
+      JSON.stringify({
+        policy: "claude-heavy",
+        claude: { models: { fast: { model: "custom-haiku" } } },
+        history: { enabled: false },
+        logging: { level: "compact" },
+        rules: "invalid",
+      }),
+    );
     const loaded = loadConfig(dir);
     assert.equal(loaded.path, path.join(dir, ".airo.json"));
     assert.equal(loaded.config.policy, "claude-heavy");
