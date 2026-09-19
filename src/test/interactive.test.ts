@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseInteractiveInput, taskArgs } from "../interactive.js";
+import { parseFeedbackAnswer, parseInteractiveInput, taskArgs } from "../interactive.js";
 
 test("treats regular interactive input as a task", () => {
   assert.deepEqual(parseInteractiveInput("  fix the parser  "), { kind: "task", task: "fix the parser" });
@@ -25,4 +25,11 @@ test("builds CLI arguments from interactive preferences", () => {
     tier: "deep",
     logLevel: "compact",
   }), ["--continue", "--adaptive", "--agent", "codex", "--tier", "deep", "--log", "compact", "ship it"]);
+});
+
+test("parses simple post-run feedback", () => {
+  assert.equal(parseFeedbackAnswer("yes"), "good");
+  assert.equal(parseFeedbackAnswer("Y"), "good");
+  assert.equal(parseFeedbackAnswer("no"), "bad");
+  assert.equal(parseFeedbackAnswer(""), undefined);
 });

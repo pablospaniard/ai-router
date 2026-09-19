@@ -23,6 +23,7 @@ export interface ModelProfile {
 export interface ProviderConfig {
   command: string;
   args?: string[];
+  permissionMode?: "acceptEdits" | "auto" | "manual" | "dontAsk" | "plan";
   allowedModels?: string[];
   models: Record<ModelTier, ModelProfile>;
 }

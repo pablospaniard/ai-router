@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { loadConfig, writeProjectConfig } from "./config.js";
 import { runSetup } from "./setup.js";
 import { printModels } from "./models.js";
-import { historyPath, readHistory, setFeedback } from "./history.js";
+import { appendHistory, historyPath, newHistoryId, readHistory, setFeedback } from "./history.js";
 import { orchestrate, planPhases, shouldOrchestrate } from "./orchestrator.js";
 import { routeTask } from "./router.js";
 import { commandExists, commandVersion, runAgent } from "./runner.js";
@@ -13,7 +13,10 @@ import { appendTurn, clearActiveSession, createSession, getActiveSession, listSe
 import { findRunLogs, followFile, logsRoot, recentRunDirs, RunLogger } from "./logging.js";
 import type { Agent, Effort, FeedbackRating, LogLevel, ModelTier, SessionState } from "./types.js";
 import { VERSION } from "./version.js";
-import { INTERACTIVE_COMMANDS, parseInteractiveInput, taskArgs, type InteractivePreferences } from "./interactive.js";
+import { INTERACTIVE_COMMANDS, parseFeedbackAnswer, parseInteractiveInput, taskArgs, type InteractivePreferences } from "./interactive.js";
+import { migrateLegacyPaths } from "./paths.js";
+import { shouldRunInitialSetup } from "./startup.js";
+import { singleRunPrompt } from "./prompts.js";
 
 function requireText(file: string): string { return fs.readFileSync(file, "utf8"); }
 
@@ -94,9 +97,28 @@ async function askTerminal(question: string): Promise<string> {
   }
 }
 
+async function askFeedbackTerminal(): Promise<string> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return await new Promise<string>(resolve => rl.question(`${ui.yellow("?")} ${ui.bold("Was this result helpful?")} ${ui.gray("[y/n, Enter to skip]")} `, resolve));
+  } finally {
+    rl.close();
+  }
+}
+
+async function collectRunFeedback(runId: string, config: any, askFeedback: () => Promise<string>): Promise<void> {
+  if (!process.stdin.isTTY || !config.history.enabled || !config.history.learningEnabled) return;
+  const rating = parseFeedbackAnswer(await askFeedback());
+  if (!rating) {
+    console.log(`${statusIcon("info")} ${ui.gray("feedback skipped")}`);
+    return;
+  }
+  setFeedback(config.history, rating, runId);
+  console.log(`${statusIcon("ok")} ${ui.gray("feedback saved ·")} ${rating === "good" ? ui.green("helpful") : ui.red("not helpful")}`);
+}
+
 async function singleRun(args: ReturnType<typeof parseArgs>, config: any, path: string | undefined, session?: SessionState, askUser: (question: string) => Promise<string> = askTerminal) {
-  const taskForRouting = session ? `${session.originalTask}\n${session.turns.slice(-4).map(t => t.userPrompt).join("\n")}\n${args.task}` : args.task;
-  let routed = routeTask(taskForRouting, config);
+  let routed = routeTask(args.task, config);
   if (args.agent !== "auto") {
     routed.agent = args.agent;
     const profile = config[routed.agent].models[args.tier ?? routed.modelTier];
@@ -114,7 +136,7 @@ async function singleRun(args: ReturnType<typeof parseArgs>, config: any, path: 
     if (args.effort) routed.effort = args.effort;
   }
   const singleRunId = `single-${Date.now().toString(36)}`;
-  const logger = new RunLogger({ runId: singleRunId, sessionId: session?.sessionId, level: args.logLevel ?? config.logging.level });
+  const logger = new RunLogger({ runId: singleRunId, sessionId: session?.sessionId, level: args.logLevel ?? config.logging.level, persist: config.logging.persist });
   const logMeta = { phaseIndex: 1, phaseTotal: 1, phaseKind: "single" as const, agent: routed.agent, model: routed.model, effort: routed.effort, tier: routed.modelTier };
   logger.phaseStart(logMeta);
   if (path) console.log(`${statusIcon("info")} ${brand()} ${ui.gray("config")} ${ui.cyan(path)}`);
@@ -125,7 +147,8 @@ async function singleRun(args: ReturnType<typeof parseArgs>, config: any, path: 
   if (args.dryRun) return { exitCode: 0, runId: "dry-run", summaries: [`single:${routed.agent}/${routed.model}`] };
   if (!commandExists(config[routed.agent].command)) throw new Error(`${config[routed.agent].command} not available in PATH`);
   const started = Date.now();
-  let effectivePrompt = `${args.task}\n\nClarification protocol: If you cannot safely continue without a user decision, do not guess. Output exactly AIROUTE_QUESTION: <your concise question> and stop.`;
+  const basePrompt = singleRunPrompt(args.task, session);
+  let effectivePrompt = basePrompt;
   let result = await runAgent(routed, effectivePrompt, config, { headless: true, capture: true, logger, logMeta });
   let clarificationCount = 0;
   while (result.question && clarificationCount < 4) {
@@ -133,16 +156,24 @@ async function singleRun(args: ReturnType<typeof parseArgs>, config: any, path: 
     logger.question(result.question);
     const answer = await askUser(result.question);
     logger.status("input received → resuming single phase");
-    effectivePrompt = `${args.task}\n\nPrevious clarification question: ${result.question}\nUser answer: ${answer}\n\nContinue the task using this answer. If another blocking decision is required, use AIROUTE_QUESTION: <question>.`;
+    effectivePrompt = `${basePrompt}\n\nPrevious clarification question: ${result.question}\nUser answer: ${answer}\n\nContinue the task using this answer. If another blocking decision is required, use AIROUTE_QUESTION: <question>.`;
     result = await runAgent(routed, effectivePrompt, config, { headless: true, capture: true, logger, logMeta });
   }
-  logger.phaseEnd(logMeta, result.exitCode, Date.now() - started);
+  const durationMs = Date.now() - started;
+  logger.phaseEnd(logMeta, result.exitCode, durationMs);
   logger.finalOutput(result.output);
-  logger.status(`logs: ${logger.runDir}`);
+  if (logger.persist) logger.status(`logs: ${logger.runDir}`);
+  appendHistory(config.history, {
+    id: newHistoryId(), runId: singleRunId, sessionId: session?.sessionId, parentRunId: session?.turns.at(-1)?.runId,
+    timestamp: new Date().toISOString(), cwd: process.cwd(), task: args.task, originalTask: args.task,
+    agent: routed.agent, modelTier: routed.modelTier, model: routed.model, effort: routed.effort,
+    complexity: routed.complexity, exitCode: result.exitCode, durationMs,
+    outputExcerpt: result.output.slice(-config.orchestration.outputTailChars),
+  });
   return { exitCode: result.exitCode, runId: singleRunId, output: result.output, summaries: [`single:${routed.agent}/${routed.model} exit=${result.exitCode}`] };
 }
 
-async function execute(args: ReturnType<typeof parseArgs>, session: SessionState | undefined, config: any, path?: string, askUser: (question: string) => Promise<string> = askTerminal) {
+async function execute(args: ReturnType<typeof parseArgs>, session: SessionState | undefined, config: any, path?: string, askUser: (question: string) => Promise<string> = askTerminal, askFeedback: () => Promise<string> = askFeedbackTerminal) {
   const adaptive = args.adaptive || (!args.single && shouldOrchestrate(args.task, config));
   if (adaptive) {
     const result = await orchestrate(args.task, config, { dryRun: args.dryRun, explain: args.explain, session, logLevel: args.logLevel, askUser });
@@ -151,6 +182,7 @@ async function execute(args: ReturnType<typeof parseArgs>, session: SessionState
       routeSummary: result.phases.map(p => `${p.phase.kind}:${p.route.agent}/${p.route.model}`).join(" → "),
       phaseSummaries: result.phases.map(p => `${p.phase.kind} exit=${p.exitCode}; ${p.output.replace(/\s+/g," ").slice(-400)}`)
     });
+    if (!args.dryRun) await collectRunFeedback(result.runId, config, askFeedback);
     return result.exitCode;
   }
   const r = await singleRun(args, config, path, session, askUser);
@@ -158,6 +190,7 @@ async function execute(args: ReturnType<typeof parseArgs>, session: SessionState
     turnId: r.runId + "-turn", runId: r.runId, timestamp: new Date().toISOString(), userPrompt: args.task,
     routeSummary: r.summaries[0] ?? "single", phaseSummaries: r.summaries
   });
+  if (!args.dryRun) await collectRunFeedback(r.runId, config, askFeedback);
   return r.exitCode;
 }
 
@@ -207,6 +240,7 @@ async function chatLoop(config: any, path?: string) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, completer, historySize: 200, removeHistoryDuplicates: true });
   const ask = () => new Promise<string>(resolve => rl.question(interactivePrompt(session, preferences), resolve));
   const askAnswer = (_question: string) => new Promise<string>(resolve => rl.question(`${promptLabel()}${ui.yellow("answer")}: `, resolve));
+  const askFeedback = () => new Promise<string>(resolve => rl.question(`${ui.yellow("?")} ${ui.bold("Was this result helpful?")} ${ui.gray("[y/n, Enter to skip]")} `, resolve));
   try {
     while (true) {
       const action = parseInteractiveInput(await ask());
@@ -238,7 +272,7 @@ async function chatLoop(config: any, path?: string) {
         const adaptive = args.adaptive || (!args.single && shouldOrchestrate(args.task, config));
         console.log(`${statusIcon("work")} ${ui.gray("workflow")} ${adaptive ? ui.magenta("adaptive") : ui.cyan("single")} ${ui.gray("· preparing run")}`);
         try {
-          await execute(args, session, config, path, askAnswer);
+          await execute(args, session, config, path, askAnswer, askFeedback);
           session = loadSession(session.sessionId);
         } catch (error) {
           console.log(`${statusIcon("error")} ${ui.red(error instanceof Error ? error.message : String(error))}`);
@@ -255,14 +289,17 @@ async function chatLoop(config: any, path?: string) {
 
 async function main() {
   const raw = process.argv.slice(2);
-  let { config, path } = loadConfig();
 
   if (raw[0] === "--version" || raw[0] === "-v") {
     console.log(VERSION);
     return;
   }
 
-  if (!path && process.stdin.isTTY && !["setup","models","config"].includes(raw[0] ?? "") && !raw.includes("--help") && !raw.includes("-h")) {
+  const migration = migrateLegacyPaths();
+  for (const error of migration.errors) console.error(`${statusIcon("error")} ${ui.yellow(`legacy data migration skipped: ${error}`)}`);
+  let { config, path } = loadConfig();
+
+  if (shouldRunInitialSetup(raw, Boolean(process.stdin.isTTY), Boolean(path))) {
     console.log(`${statusIcon("info")} ${brand()} ${ui.bold("first run detected")}`);
     console.log(`${ui.gray("No config found. Starting model setup; you can rerun it anytime with")} ${commandColor("airo setup")}.`);
     await runSetup();

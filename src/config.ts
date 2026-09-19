@@ -11,6 +11,7 @@ export const DEFAULT_CONFIG: RouterConfig = {
   claude: {
     command: "claude",
     args: [],
+    permissionMode: "acceptEdits",
     allowedModels: ["haiku", "sonnet", "opus"],
     models: {
       fast: { model: "haiku", effort: "low" },

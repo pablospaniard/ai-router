@@ -45,7 +45,7 @@ export async function runSetup(): Promise<string> {
 
   console.log("");
   console.log(ui.bold(ui.cyan("╭────────────────────────────────────────────────────────╮")));
-  console.log(ui.bold(ui.cyan("│                 AI ROUTER SETUP                        │")));
+  console.log(ui.bold(ui.cyan("│                    AIRO SETUP                         │")));
   console.log(ui.bold(ui.cyan("╰────────────────────────────────────────────────────────╯")));
   console.log(`${statusIcon("info")} ${ui.bold("Choose models once; routing remains automatic afterwards.")}`);
   console.log(`${ui.gray("Config")} ${ui.cyan("~/.config/airo/config.json")}`);

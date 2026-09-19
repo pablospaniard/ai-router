@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DEFAULT_CONFIG } from "../config.js";
-import { planPhases, shouldOrchestrate } from "../orchestrator.js";
+import { needsRecovery, planPhases, shouldOrchestrate } from "../orchestrator.js";
 import { routeTask } from "../router.js";
 import type { RouterConfig } from "../types.js";
 
@@ -100,4 +100,19 @@ test("caps planned phases at the configured maximum", () => {
 
   assert.equal(plans.length, 2);
   assert.deepEqual(plans.map((phase) => phase.kind), ["analyze", "implement"]);
+});
+
+test("does not recover from historical failure wording in a successful result", () => {
+  const route = routeTask("fix test", config());
+  const execution = {
+    phase: planPhases("rename a type", config())[0],
+    route,
+    exitCode: 0,
+    durationMs: 1,
+    output: "Tests failed initially, but the fix is complete and all tests now pass.",
+  };
+
+  assert.equal(needsRecovery(execution), false);
+  assert.equal(needsRecovery({ ...execution, output: "Status: unresolved — missing credentials." }), true);
+  assert.equal(needsRecovery({ ...execution, exitCode: 1 }), true);
 });

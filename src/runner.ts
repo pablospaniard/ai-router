@@ -22,6 +22,7 @@ function argsForRoute(route: RouteResult, prompt: string, config: RouterConfig, 
     if (headless) args.push("-p");
     args.push("--model", route.model);
     if (structuredProgress && headless) args.push("--output-format", "stream-json", "--verbose");
+    if (headless && provider.permissionMode) args.push("--permission-mode", provider.permissionMode);
     if (route.effort !== "auto") env.CLAUDE_CODE_EFFORT_LEVEL = route.effort;
     args.push(prompt);
   } else {
@@ -34,16 +35,22 @@ function argsForRoute(route: RouteResult, prompt: string, config: RouterConfig, 
   return { args, env };
 }
 
-function compactJson(value: unknown, max = 280): string {
+function compactJson(value: unknown, max = 140): string {
   let s: string;
   try { s = JSON.stringify(value); } catch { s = String(value); }
   return s.length <= max ? s : `${s.slice(0, max)}…`;
 }
 
-function claudeProgress(event: any): { messages: Array<{ category: string; text: string }>; output: string[] } {
+export interface ParsedProviderEvent {
+  messages: Array<{ category: string; text: string }>;
+  candidateOutput?: string;
+  finalOutput?: string;
+}
+
+export function claudeProgress(event: any): ParsedProviderEvent {
   const messages: Array<{ category: string; text: string }> = [];
-  const output: string[] = [];
-  if (!event || typeof event !== "object") return { messages, output };
+  const candidate: string[] = [];
+  if (!event || typeof event !== "object") return { messages };
 
   if (event.type === "system") {
     if (event.subtype === "init") messages.push({ category: "system", text: `initialized${event.model ? ` model=${event.model}` : ""}${event.session_id ? ` session=${event.session_id}` : ""}` });
@@ -55,7 +62,7 @@ function claudeProgress(event: any): { messages: Array<{ category: string; text:
     for (const block of event.message.content) {
       if (block?.type === "text" && block.text) {
         messages.push({ category: "message", text: String(block.text) });
-        output.push(String(block.text));
+        candidate.push(String(block.text));
       } else if (block?.type === "tool_use") {
         const name = block.name ?? "tool";
         const details = block.input ? ` ${compactJson(block.input)}` : "";
@@ -70,21 +77,23 @@ function claudeProgress(event: any): { messages: Array<{ category: string; text:
   }
 
   if (event.type === "result") {
-    if (event.result && output.length === 0) output.push(String(event.result));
     const bits = [event.subtype ?? "completed"];
     if (event.duration_ms != null) bits.push(`${Math.round(event.duration_ms/1000)}s`);
-    if (event.total_cost_usd != null) bits.push(`cost=$${Number(event.total_cost_usd).toFixed(4)}`);
     messages.push({ category: "result", text: bits.join(" ") });
   }
 
   // Intentionally do not surface raw thinking/reasoning content.
-  return { messages, output };
+  return {
+    messages,
+    candidateOutput: candidate.length ? candidate.join("\n") : undefined,
+    finalOutput: event.type === "result" && event.result ? String(event.result) : undefined,
+  };
 }
 
-function codexProgress(event: any): { messages: Array<{ category: string; text: string }>; output: string[] } {
+export function codexProgress(event: any): ParsedProviderEvent {
   const messages: Array<{ category: string; text: string }> = [];
-  const output: string[] = [];
-  if (!event || typeof event !== "object") return { messages, output };
+  let candidateOutput: string | undefined;
+  if (!event || typeof event !== "object") return { messages };
 
   if (event.type === "thread.started") messages.push({ category: "system", text: `thread started${event.thread_id ? ` ${event.thread_id}` : ""}` });
   else if (event.type === "turn.started") messages.push({ category: "system", text: "turn started" });
@@ -100,7 +109,7 @@ function codexProgress(event: any): { messages: Array<{ category: string; text: 
     const done = event.type === "item.completed";
     switch (item.type) {
       case "command_execution":
-        messages.push({ category: "tool", text: `${done ? "command completed" : "command"}: ${item.command ?? ""}${done && item.exit_code != null ? ` (exit ${item.exit_code})` : ""}` });
+        messages.push({ category: "tool", text: done ? `command completed${item.exit_code != null ? ` (exit ${item.exit_code})` : ""}` : `command: ${String(item.command ?? "").slice(0, 140)}` });
         break;
       case "file_change":
       case "file_changes":
@@ -115,7 +124,7 @@ function codexProgress(event: any): { messages: Array<{ category: string; text: 
       case "agent_message":
         if (item.text) {
           messages.push({ category: "message", text: String(item.text) });
-          output.push(String(item.text));
+          if (done) candidateOutput = String(item.text);
         }
         break;
       case "reasoning":
@@ -127,16 +136,24 @@ function codexProgress(event: any): { messages: Array<{ category: string; text: 
         break;
     }
   }
-  return { messages, output };
+  return { messages, candidateOutput };
 }
 
 function extractQuestion(text: string): string | undefined {
   const match = text.match(/(?:^|\n)\s*AIROUTE_QUESTION:\s*(.+?)(?:\n|$)/is);
-  return match?.[1]?.trim();
+  const question = match?.[1]?.trim();
+  return question && !/[<>]/.test(question) ? question : undefined;
 }
 
-function progressFor(agent: Agent, event: any) {
+export function progressFor(agent: Agent, event: any): ParsedProviderEvent {
   return agent === "claude" ? claudeProgress(event) : codexProgress(event);
+}
+
+export function assertAllowedModel(route: RouteResult, config: RouterConfig): void {
+  const allowed = config[route.agent].allowedModels ?? [];
+  if (allowed.length && !allowed.includes(route.model)) {
+    throw new Error(`Model ${route.model} is not allowed for ${route.agent}. Run \`airo setup\` or update allowedModels.`);
+  }
 }
 
 export async function runAgent(
@@ -146,6 +163,7 @@ export async function runAgent(
   options: { headless?: boolean; capture?: boolean; logger?: RunLogger; logMeta?: PhaseLogMeta } = {}
 ): Promise<AgentRunResult> {
   const provider = config[route.agent];
+  assertAllowedModel(route, config);
   const headless = options.headless ?? false;
   const capture = options.capture ?? false;
   const structuredProgress = Boolean(options.logger && headless);
@@ -163,7 +181,9 @@ export async function runAgent(
   }
 
   const child = spawn(provider.command, args, { cwd: process.cwd(), stdio: ["inherit", "pipe", "pipe"], env });
-  let output = "";
+  let fallbackOutput = "";
+  let candidateOutput = "";
+  let finalOutput = "";
   let stdoutBuffer = "";
   let question: string | undefined;
 
@@ -177,15 +197,14 @@ export async function runAgent(
         options.logger?.progress(options.logMeta!, msg.text, msg.category);
         if (!question && msg.category === "message") question = extractQuestion(msg.text);
       }
-      if (progress.output.length) {
-        const joined = progress.output.join("\n");
-        output += `${joined}\n`;
-        if (!question) question = extractQuestion(joined);
-      }
+      if (progress.candidateOutput) candidateOutput = progress.candidateOutput;
+      if (progress.finalOutput) finalOutput = progress.finalOutput;
+      const semanticOutput = progress.finalOutput ?? progress.candidateOutput;
+      if (!question && semanticOutput) question = extractQuestion(semanticOutput);
     } catch {
       // Forward non-JSON provider output instead of losing it.
       options.logger?.progress(options.logMeta!, line, "output");
-      output += `${line}\n`;
+      fallbackOutput += `${line}\n`;
     }
   };
 
@@ -197,7 +216,7 @@ export async function runAgent(
       stdoutBuffer = lines.pop() ?? "";
       for (const line of lines) handleStructuredLine(line);
     } else {
-      output += s;
+      fallbackOutput += s;
       process.stdout.write(s);
     }
   });
@@ -214,6 +233,7 @@ export async function runAgent(
   });
 
   if (structuredProgress && stdoutBuffer.trim()) handleStructuredLine(stdoutBuffer);
+  const output = (finalOutput || candidateOutput || fallbackOutput).trim();
   if (!question) question = extractQuestion(output);
-  return { exitCode, output: output.trim(), question };
+  return { exitCode, output, question };
 }

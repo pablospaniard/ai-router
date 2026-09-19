@@ -16,6 +16,7 @@ request → route → analyze → implement → test → review
 - Hands complex tasks between Claude Code and Codex through a shared working tree.
 - Preserves logical session context even when the provider changes between turns.
 - Streams structured progress while keeping hidden reasoning private.
+- Separates live progress from the provider's final result.
 - Persists phase logs, final output, routing history, and user feedback locally.
 - Inserts a recovery phase when a workflow fails or reports an unresolved problem.
 
@@ -149,7 +150,15 @@ airo feedback good <run-id>
 airo feedback bad <run-id> "used more reasoning than necessary"
 ```
 
-Each run stores its combined log, individual phase logs, structured event streams, and a clean `final-output.txt`.
+In an interactive terminal, AIRO also asks a short question after every completed run:
+
+```text
+? Was this result helpful? [y/n, Enter to skip]
+```
+
+`yes` records positive feedback, `no` records negative feedback, and Enter skips the rating. Disable `history.learningEnabled` to turn off the prompt and feedback-based routing adjustments.
+
+Each persisted run stores its combined log, individual phase logs, structured event streams, and a clean `final-output.txt` containing only the provider's terminal response. Set `logging.persist` to `false` to keep the terminal stream without writing run files.
 
 ## Configuration
 
@@ -167,7 +176,9 @@ airo config init
 
 This creates `.airo.json` in the current directory. Project configuration takes precedence over global configuration. See [`airo.config.example.json`](airo.config.example.json) for all available settings.
 
-AIRO continues to discover legacy `.ai-router.json`, `~/.config/ai-router/config.json`, and `~/.local/share/ai-router/` data so existing installations keep their sessions, history, and logs.
+On the first command after upgrading, AIRO copies legacy global configuration and data into `~/.config/airo/` and `~/.local/share/airo/`. The old files remain untouched as a rollback path. Project-level `.ai-router.json` files continue to be discovered.
+
+Claude runs use `permissionMode: "acceptEdits"` by default so headless implementation tasks can edit the working tree. Change it to `auto`, `manual`, `dontAsk`, or `plan` in configuration when a more restrictive mode is appropriate. Model IDs must appear in the provider's `allowedModels` list.
 
 ## Command reference
 

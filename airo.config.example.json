@@ -4,6 +4,7 @@
   "claude": {
     "command": "claude",
     "args": [],
+    "permissionMode": "acceptEdits",
     "models": {
       "fast": {
         "model": "haiku",

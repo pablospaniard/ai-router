@@ -1,13 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Agent, LogLevel, PhaseKind } from "./types.js";
-import { agentColor, brand, divider, statusIcon, tierColor, ui } from "./ui.js";
+import { agentColor, divider, sectionRule, statusIcon, ui } from "./ui.js";
 import { dataRootDir } from "./paths.js";
 
 export interface RunLoggerOptions {
   runId: string;
   sessionId?: string;
   level: LogLevel;
+  persist?: boolean;
 }
 
 export interface PhaseLogMeta {
@@ -24,9 +25,9 @@ function nowTime(): string {
   return new Date().toISOString().slice(11, 19);
 }
 
-function dataDir(): string {
+function dataDir(create = true): string {
   const dir = path.join(dataRootDir(), "logs");
-  fs.mkdirSync(dir, { recursive: true });
+  if (create) fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
 
@@ -38,6 +39,7 @@ export class RunLogger {
   readonly runId: string;
   readonly sessionId?: string;
   readonly level: LogLevel;
+  readonly persist: boolean;
   readonly runDir: string;
   readonly combinedPath: string;
 
@@ -45,13 +47,15 @@ export class RunLogger {
     this.runId = options.runId;
     this.sessionId = options.sessionId;
     this.level = options.level;
+    this.persist = options.persist ?? true;
     const parent = this.sessionId ? `session-${safeName(this.sessionId)}` : "standalone";
-    this.runDir = path.join(dataDir(), parent, `run-${safeName(this.runId)}`);
-    fs.mkdirSync(this.runDir, { recursive: true });
+    this.runDir = path.join(dataDir(this.persist), parent, `run-${safeName(this.runId)}`);
+    if (this.persist) fs.mkdirSync(this.runDir, { recursive: true });
     this.combinedPath = path.join(this.runDir, "combined.log");
   }
 
   private append(file: string, value: string) {
+    if (!this.persist) return;
     fs.appendFileSync(file, value.endsWith("\n") ? value : `${value}\n`);
   }
 
@@ -100,9 +104,15 @@ export class RunLogger {
       this.append(this.phaseFile(meta), line);
       this.append(this.combinedPath, line);
       if (this.level !== "compact") {
-        const prefix = `${ui.gray(nowTime())} ${agentColor(meta.agent, `[${meta.phaseKind}]`)} ${agentColor(meta.agent, `[${meta.agent}]`)} ${ui.gray(`[${category}]`)}`;
-        const colored = category === "error" ? ui.red(text) : category === "message" ? ui.bold(text) : category === "tool" || category === "file" ? ui.cyan(text) : text;
-        this.console(`${prefix} ${colored}`);
+        const time = ui.gray(nowTime());
+        if (category === "message") this.console(`${time} ${agentColor(meta.agent, "▌")} ${ui.white(text)}`);
+        else if (category === "tool") this.console(`${time} ${ui.cyan("⚙ tool ")} ${ui.dim(text)}`);
+        else if (category === "file") this.console(`${time} ${ui.blue("✎ edit ")} ${ui.cyan(text)}`);
+        else if (category === "error") this.console(`${time} ${ui.red("✗ error")} ${ui.red(text)}`);
+        else if (category === "retry") this.console(`${time} ${ui.yellow("↻ retry")} ${ui.yellow(text)}`);
+        else if (category === "result") this.console(`${time} ${ui.gray("└ done ")} ${ui.dim(text)}`);
+        else if (category === "system") this.console(`${time} ${ui.gray("· sys  ")} ${ui.dim(text)}`);
+        else this.console(`${time} ${ui.gray("· info ")} ${ui.dim(text)}`);
       }
     }
   }
@@ -119,7 +129,11 @@ export class RunLogger {
   }
 
   phaseStart(meta: PhaseLogMeta) {
-    this.status(`phase ${meta.phaseIndex}/${meta.phaseTotal}: ${meta.phaseKind} → ${meta.agent}/${meta.model} effort=${meta.effort} tier=${meta.tier}`);
+    const message = `phase ${meta.phaseIndex}/${meta.phaseTotal}: ${meta.phaseKind} → ${meta.agent}/${meta.model} effort=${meta.effort} tier=${meta.tier}`;
+    this.append(this.combinedPath, `${nowTime()} [airo] ${message}`);
+    this.console("");
+    this.console(sectionRule(`Phase ${meta.phaseIndex}/${meta.phaseTotal} · ${meta.phaseKind} · ${meta.agent}/${meta.model}`));
+    this.console(`${ui.gray(nowTime())} ${ui.gray(`effort=${meta.effort} · tier=${meta.tier}`)}`);
     this.metadata(`phase-log=${this.phaseFile(meta)}`);
     this.metadata(`events=${this.eventsFile(meta)}`);
   }
@@ -140,13 +154,13 @@ export class RunLogger {
     const clean = output.trim();
     if (!clean) return;
     const file = path.join(this.runDir, "final-output.txt");
-    fs.writeFileSync(file, `${clean}\n`);
+    if (this.persist) fs.writeFileSync(file, `${clean}\n`);
     this.append(this.combinedPath, `${nowTime()} [airo][final] ${clean.replace(/\n/g, "\n[final] ")}`);
 
     this.console("");
-    this.console(divider("Final answer"));
+    this.console(sectionRule(`${statusIcon("ok")} Final result`));
     this.console(ui.white(clean));
-    this.console(divider());
+    this.console(ui.gray("─".repeat(68)));
   }
 }
 

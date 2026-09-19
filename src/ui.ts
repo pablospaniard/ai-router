@@ -29,6 +29,10 @@ export function divider(title?: string): string {
   const width = Math.max(24, 58 - body.length);
   return ui.gray(`${"─".repeat(Math.floor(width/2))}${body}${"─".repeat(Math.ceil(width/2))}`);
 }
+export function sectionRule(title: string, width = 68): string {
+  const label = ` ${title} `;
+  return ui.gray(`──${label}${"─".repeat(Math.max(0, width - label.length - 2))}`);
+}
 export function promptLabel(): string { return `${ui.green("❯")} `; }
 export function command(s: string): string { return ui.bold(ui.cyan(s)); }
 

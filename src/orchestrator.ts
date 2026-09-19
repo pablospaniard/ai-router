@@ -84,16 +84,15 @@ function fallbackIfMissing(route: RouteResult, config: RouterConfig): RouteResul
   return { ...route, agent: fallback, model: p.model, effort: p.effort ?? route.effort };
 }
 
-function needsRecovery(exec: PhaseExecution): boolean {
+export function needsRecovery(exec: PhaseExecution): boolean {
   if (exec.exitCode !== 0) return true;
-  const t = exec.output.toLowerCase();
-  return /\b(failed|failure|still failing|unable to|could not|unresolved|tests? failed|build failed)\b/.test(t);
+  return /(?:^|\n)\s*(?:status:\s*)?(?:failed|unresolved|unable to complete|could not complete)\b/im.test(exec.output);
 }
 
 export async function orchestrate(task: string, config: RouterConfig, options: { dryRun?: boolean; explain?: boolean; session?: SessionState; logLevel?: LogLevel; askUser?: (question: string) => Promise<string> } = {}): Promise<{ runId: string; phases: PhaseExecution[]; exitCode: number }> {
   const runId = newRunId();
   const routedTask = options.session ? `${compactSessionContext(options.session)}\n\nCurrent follow-up request: ${task}` : task;
-  const logger = new RunLogger({ runId, sessionId: options.session?.sessionId, level: options.logLevel ?? config.logging.level });
+  const logger = new RunLogger({ runId, sessionId: options.session?.sessionId, level: options.logLevel ?? config.logging.level, persist: config.logging.persist });
   let plans = planPhases(task, config);
   const executions: PhaseExecution[] = [];
 
@@ -157,7 +156,7 @@ export async function orchestrate(task: string, config: RouterConfig, options: {
   const finalExecution = [...executions].reverse().find(e => e.output.trim().length > 0);
   logger.status(`adaptive run ${runId} complete exit=${exitCode}`);
   if (finalExecution) logger.finalOutput(finalExecution.output);
-  logger.status(`logs: ${logger.runDir}`);
+  if (logger.persist) logger.status(`logs: ${logger.runDir}`);
   logger.status(`rate: airo feedback good ${runId}  |  airo feedback bad ${runId}`);
   return { runId, phases: executions, exitCode };
 }

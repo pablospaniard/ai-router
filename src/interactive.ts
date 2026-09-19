@@ -1,4 +1,4 @@
-import type { Agent, LogLevel, ModelTier } from "./types.js";
+import type { Agent, FeedbackRating, LogLevel, ModelTier } from "./types.js";
 
 export type InteractiveMode = "auto" | "adaptive" | "single";
 
@@ -75,4 +75,11 @@ export function taskArgs(task: string, preferences: InteractivePreferences): str
   if (preferences.tier) args.push("--tier", preferences.tier);
   args.push("--log", preferences.logLevel, task);
   return args;
+}
+
+export function parseFeedbackAnswer(input: string): FeedbackRating | undefined {
+  const answer = input.trim().toLowerCase();
+  if (answer === "y" || answer === "yes") return "good";
+  if (answer === "n" || answer === "no") return "bad";
+  return undefined;
 }
