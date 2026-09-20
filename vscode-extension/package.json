@@ -23,7 +23,8 @@
   ],
   "main": "./out/extension.js",
   "scripts": {
-    "compile": "tsc -p ./"
+    "compile": "tsc -p ./",
+    "package": "pnpm dlx @vscode/vsce package --no-dependencies"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
@@ -121,7 +122,13 @@
     "onCommand:airo.runTask",
     "onView:airo.sidebar"
   ],
+  "extensionKind": [
+    "workspace"
+  ],
   "engines": {
     "vscode": "^1.106.0"
+  },
+  "capabilities": {
+    "virtualWorkspaces": false
   }
 }
