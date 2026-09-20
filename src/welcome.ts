@@ -1,6 +1,7 @@
 import { DEFAULT_CONFIG } from "./config.js";
 import type { RouterConfig } from "./types.js";
 import { agentColor, command, outputWidth, sectionRule, ui, visibleLength } from "./ui.js";
+import { VERSION } from "./version.js";
 
 function defaultsTable(config: RouterConfig): string[] {
   const rows = (["codex", "claude"] as const).flatMap((agent) =>
@@ -45,6 +46,7 @@ export function firstRunWelcome(config: RouterConfig = DEFAULT_CONFIG): string {
     "",
     ...logo,
     ui.dim("Adaptive Intelligence Routing & Orchestration"),
+    ui.gray(`Version ${VERSION}`),
     "",
     sectionRule("Welcome"),
     `${ui.bold("AIRO")} routes each coding task between ${agentColor("claude", "Claude Code")} and ${agentColor("codex", "Codex CLI")}, choosing a model tier for the work.`,

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { DEFAULT_CONFIG } from "../config.js";
 import { plainText } from "../ui.js";
+import { VERSION } from "../version.js";
 import { firstRunWelcome } from "../welcome.js";
 
 test("introduces AIRO and its initial model setup on first run", () => {
@@ -9,6 +10,7 @@ test("introduces AIRO and its initial model setup on first run", () => {
 
   assert.match(welcome, /█████╗/);
   assert.match(welcome, /Adaptive Intelligence Routing & Orchestration/);
+  assert.match(welcome, new RegExp(`Version ${VERSION.replaceAll(".", "\\.")}`));
   assert.match(welcome, /existing provider CLI logins/);
   assert.match(welcome, /Provider\s+Tier\s+Model\s+Effort/);
   assert.match(welcome, /codex\s+fast\s+gpt-5\.6-luna\s+low/);

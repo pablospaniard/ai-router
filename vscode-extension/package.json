@@ -16,14 +16,10 @@
     "url": "https://github.com/pablospaniard/airo-cli.git"
   },
   "publisher": "pablospaniard",
-  "files": [
-    "LICENSE",
-    "media/**",
-    "out/**"
-  ],
   "main": "./out/extension.js",
   "scripts": {
-    "compile": "tsc -p ./"
+    "compile": "tsc -p ./",
+    "package": "pnpm dlx @vscode/vsce package --no-dependencies"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
@@ -46,6 +42,10 @@
           "type": "webview",
           "id": "airo.sidebar",
           "name": "AIRO"
+        },
+        {
+          "id": "airo.attachments",
+          "name": "Attach Files"
         }
       ]
     },
@@ -53,6 +53,10 @@
       {
         "command": "airo.runTask",
         "title": "AIRO: Run Task"
+      },
+      {
+        "command": "airo.openHistory",
+        "title": "AIRO: Open Previous Chats"
       },
       {
         "command": "airo.openTerminal",
@@ -109,19 +113,26 @@
             "live",
             "verbose"
           ],
-          "default": "compact",
-          "description": "AIRO output detail shown for sidebar tasks."
+          "default": "live",
+          "description": "AIRO output detail shown for sidebar tasks. Live is recommended so provider progress streams into the chat."
         }
       }
     }
   },
   "activationEvents": [
+    "onCommand:airo.openHistory",
     "onCommand:airo.openSettings",
     "onCommand:airo.openTerminal",
     "onCommand:airo.runTask",
     "onView:airo.sidebar"
   ],
+  "extensionKind": [
+    "workspace"
+  ],
   "engines": {
     "vscode": "^1.106.0"
+  },
+  "capabilities": {
+    "virtualWorkspaces": false
   }
 }

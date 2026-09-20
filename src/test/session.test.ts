@@ -11,6 +11,7 @@ import {
   getActiveSession,
   listSessions,
   loadSession,
+  loadSessionTranscript,
   saveSession,
   setActiveSession,
 } from "../session.js";
@@ -34,6 +35,10 @@ test("manages the complete session lifecycle", () => {
       routeSummary: "single:codex/model",
       phaseSummaries: ["first", "second"],
     });
+    assert.deepEqual(
+      loadSessionTranscript(session.sessionId).turns[0]?.finalOutput,
+      "first\nsecond",
+    );
     assert.match(compactSessionContext(session), /User follow-up: follow up/);
     saveSession(session);
     assert.equal(listSessions(cwd).length, 1);

@@ -45,7 +45,8 @@
     "start": "node dist/cli.js",
     "validate": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm test",
     "hooks:install": "git config core.hooksPath .githooks",
-    "prepare": "pnpm run build"
+    "prepare": "pnpm run build",
+    "package:extension": "pnpm --dir vscode-extension run package"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

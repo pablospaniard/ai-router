@@ -138,7 +138,7 @@ function phaseTask(originalTask: string, phasePlan: PhasePlan, prior: PhaseExecu
   const priorSummary = prior.length
     ? `\n\nPrior phase outcomes:\n${prior.map((p) => `- ${p.phase.kind}: exit=${p.exitCode}; ${tail(p.output, 1200)}`).join("\n")}`
     : "";
-  return `[adaptive phase: ${phasePlan.kind}]\nOriginal request: ${originalTask}\n\nPhase objective: ${phasePlan.instruction}${priorSummary}\n\nClarification protocol: If you cannot safely continue without a user decision, do not guess. Output exactly one line in the form AIROUTE_QUESTION: <your concise question> and stop. Otherwise continue normally.`;
+  return `[adaptive phase: ${phasePlan.kind}]\nOriginal request: ${originalTask}\n\nPhase objective: ${phasePlan.instruction}${priorSummary}\n\nClarification protocol: If you cannot safely continue without a user decision, do not guess. If a required command is blocked by the sandbox or permissions, output exactly AIROUTE_QUESTION: Permission required to <describe the blocked action>. Approve? and stop; do not claim the phase is complete. For any other blocking decision, output exactly one line in the form AIROUTE_QUESTION: <your concise question> and stop. Otherwise continue normally.`;
 }
 
 function tail(s: string, n: number): string {
@@ -292,10 +292,9 @@ export async function orchestrate(
       clarificationCount++;
       logger.question(result.question);
       const answer = (await options.askUser(result.question)).trim();
-      const permissionMode =
-        route.agent === "claude" && isApprovalAnswer(answer) ? "bypassPermissions" : undefined;
+      const elevated = isApprovalAnswer(answer);
       logger.status(
-        permissionMode
+        elevated
           ? `approval received → resuming ${p.kind} with elevated permissions`
           : `input received → resuming ${p.kind}`,
       );
@@ -305,7 +304,7 @@ export async function orchestrate(
         capture: true,
         logger,
         logMeta,
-        permissionMode,
+        elevated,
       });
       usage = addTokenUsage(usage, result.usage);
     }

@@ -27,7 +27,7 @@ function argsForRoute(
   config: RouterConfig,
   headless: boolean,
   structuredProgress: boolean,
-  permissionMode?: RouterConfig["claude"]["permissionMode"],
+  elevated = false,
 ): { args: string[]; env: any } {
   const provider = config[route.agent];
   const env: any = { ...process.env };
@@ -37,12 +37,22 @@ function argsForRoute(
     if (headless) args.push("-p");
     args.push("--model", route.model);
     if (structuredProgress && headless) args.push("--output-format", "stream-json", "--verbose");
-    const effectivePermissionMode = permissionMode ?? provider.permissionMode;
+    const effectivePermissionMode =
+      elevated || config.permissions.mode === "fullAccess"
+        ? "bypassPermissions"
+        : provider.permissionMode;
     if (headless && effectivePermissionMode)
       args.push("--permission-mode", effectivePermissionMode);
     if (route.effort !== "auto") env.CLAUDE_CODE_EFFORT_LEVEL = route.effort;
     args.push(prompt);
   } else {
+    if (elevated || config.permissions.mode === "fullAccess") {
+      args.push("--sandbox", "danger-full-access");
+    } else {
+      args.push("--sandbox", "workspace-write");
+      if (config.permissions.networkAccess)
+        args.push("-c", "sandbox_workspace_write.network_access=true");
+    }
     if (headless) args.push("exec");
     if (structuredProgress && headless) args.push("--json");
     args.push("--model", route.model);
@@ -285,7 +295,7 @@ export async function runAgent(
     capture?: boolean;
     logger?: RunLogger;
     logMeta?: PhaseLogMeta;
-    permissionMode?: RouterConfig["claude"]["permissionMode"];
+    elevated?: boolean;
   } = {},
 ): Promise<AgentRunResult> {
   const provider = config[route.agent];
@@ -298,7 +308,7 @@ export async function runAgent(
     config,
     headless,
     structuredProgress,
-    options.permissionMode,
+    options.elevated,
   );
 
   options.logger?.metadata(
@@ -318,7 +328,10 @@ export async function runAgent(
 
   const child = spawn(provider.command, args, {
     cwd: process.cwd(),
-    stdio: ["inherit", "pipe", "pipe"],
+    // Headless providers receive the complete prompt as an argument. Leaving
+    // stdin open makes Codex wait for "additional input" forever when AIRO is
+    // launched by an editor or another process with piped stdin.
+    stdio: ["ignore", "pipe", "pipe"],
     env,
   });
   let fallbackOutput = "";

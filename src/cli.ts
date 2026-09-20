@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import readline from "node:readline";
+import { execFileSync } from "node:child_process";
 import {
   agentColor,
   brand,
@@ -33,6 +34,7 @@ import {
   getActiveSession,
   listSessions,
   loadSession,
+  loadSessionTranscript,
   setActiveSession,
 } from "./session.js";
 import { findRunLogs, followFile, logsRoot, recentRunDirs, RunLogger } from "./logging.js";
@@ -305,10 +307,9 @@ async function singleRun(
     clarificationCount++;
     logger.question(result.question);
     const answer = await askUser(result.question);
-    const permissionMode =
-      routed.agent === "claude" && isApprovalAnswer(answer) ? "bypassPermissions" : undefined;
+    const elevated = isApprovalAnswer(answer);
     logger.status(
-      permissionMode
+      elevated
         ? "approval received → resuming single phase with elevated permissions"
         : "input received → resuming single phase",
     );
@@ -318,7 +319,7 @@ async function singleRun(
       capture: true,
       logger,
       logMeta,
-      permissionMode,
+      elevated,
     });
     usage = addTokenUsage(usage, result.usage);
   }
@@ -399,7 +400,10 @@ async function execute(
   return r.exitCode;
 }
 
-function interactivePrompt(session: SessionState, preferences: InteractivePreferences): string {
+export function interactivePrompt(
+  session: SessionState,
+  preferences: InteractivePreferences,
+): string {
   const mode =
     preferences.mode === "auto"
       ? ui.green("auto")
@@ -410,7 +414,19 @@ function interactivePrompt(session: SessionState, preferences: InteractivePrefer
     preferences.agent === "auto"
       ? ui.gray("auto-agent")
       : agentColor(preferences.agent, preferences.agent);
-  return `${brand()} ${ui.gray(session.sessionId.slice(0, 6))} ${mode} ${agent} ${ui.green("❯")} `;
+  const repo = pathModule.basename(process.cwd());
+  let branch = "detached";
+  try {
+    branch =
+      execFileSync("git", ["branch", "--show-current"], {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim() || "detached";
+  } catch {
+    // The prompt should remain usable outside a Git repository.
+  }
+  return `${brand()} ${ui.gray(session.sessionId.slice(0, 6))} ${ui.gray(`${repo}:${branch}`)} ${mode} ${agent} ${ui.green("❯")} `;
 }
 
 function interactiveStatus(
@@ -828,7 +844,25 @@ async function main() {
     return;
   }
   if (raw[0] === "sessions") {
-    const list = listSessions();
+    const json = raw.includes("--json");
+    const limitIndex = raw.findIndex((arg: string) => arg === "--limit");
+    const requestedLimit = limitIndex >= 0 ? Number(raw[limitIndex + 1]) : undefined;
+    const limit =
+      Number.isInteger(requestedLimit) && requestedLimit! > 0 ? requestedLimit : undefined;
+    const list = listSessions().slice(0, limit);
+    if (json) {
+      console.log(
+        JSON.stringify(
+          list.map((s) => ({
+            sessionId: s.sessionId,
+            description: s.originalTask.replace(/\s+/g, " ").trim().slice(0, 160),
+            updatedAt: s.updatedAt,
+            turnCount: s.turns.length,
+          })),
+        ),
+      );
+      return;
+    }
     if (!list.length) console.log(`${statusIcon("info")} ${ui.gray("No sessions for this repo.")}`);
     for (const s of list)
       console.log(
@@ -837,6 +871,7 @@ async function main() {
     return;
   }
   if (raw[0] === "session") {
+    const json = raw.includes("--json");
     if (raw[1] === "clear") {
       clearActiveSession();
       console.log(`${statusIcon("ok")} ${ui.green("Cleared active session for this repo.")}`);
@@ -854,7 +889,25 @@ async function main() {
       }
       return;
     }
-    const s = getActiveSession();
+    const requestedId = raw[1] && raw[1] !== "--json" ? raw[1] : undefined;
+    const s = requestedId ? loadSession(requestedId) : getActiveSession();
+    if (json) {
+      console.log(
+        JSON.stringify(
+          s
+            ? requestedId
+              ? loadSessionTranscript(s.sessionId)
+              : {
+                  sessionId: s.sessionId,
+                  description: s.originalTask.replace(/\s+/g, " ").trim().slice(0, 160),
+                  updatedAt: s.updatedAt,
+                  turnCount: s.turns.length,
+                }
+            : null,
+        ),
+      );
+      return;
+    }
     console.log(
       s
         ? `${divider("Active session")}\n${ui.cyan(JSON.stringify(s, null, 2))}`
