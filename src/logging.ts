@@ -30,8 +30,14 @@ export interface PhaseLogMeta {
   tier: string;
 }
 
+export function formatLocalTime(date: Date): string {
+  return [date.getHours(), date.getMinutes(), date.getSeconds()]
+    .map((part) => String(part).padStart(2, "0"))
+    .join(":");
+}
+
 function nowTime(): string {
-  return new Date().toISOString().slice(11, 19);
+  return formatLocalTime(new Date());
 }
 
 function dataDir(create = true): string {

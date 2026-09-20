@@ -6,11 +6,18 @@ import test from "node:test";
 import {
   findRunLogs,
   followFile,
+  formatLocalTime,
   logsRoot,
   recentRunDirs,
   RunLogger,
   type PhaseLogMeta,
 } from "../logging.js";
+
+test("formats activity timestamps in the machine's local time", () => {
+  const localDate = new Date(2026, 8, 20, 18, 30, 5);
+
+  assert.equal(formatLocalTime(localDate), "18:30:05");
+});
 
 const meta: PhaseLogMeta = {
   phaseIndex: 1,
