@@ -3,6 +3,15 @@ import path from "node:path";
 import crypto from "node:crypto";
 import type { SessionState, SessionTurn } from "./types.js";
 import { dataRootDir } from "./paths.js";
+import { findRunLogs } from "./logging.js";
+
+export interface SessionTranscriptTurn extends SessionTurn {
+  finalOutput: string;
+}
+
+export interface SessionTranscript extends Omit<SessionState, "turns"> {
+  turns: SessionTranscriptTurn[];
+}
 
 function rootDir(): string {
   const dir = dataRootDir();
@@ -61,6 +70,22 @@ export function loadSession(id: string): SessionState {
   const p = sessionPath(id);
   if (!fs.existsSync(p)) throw new Error(`Session not found: ${id}`);
   return JSON.parse(fs.readFileSync(p, "utf8"));
+}
+
+export function loadSessionTranscript(id: string): SessionTranscript {
+  const session = loadSession(id);
+  return {
+    ...session,
+    turns: session.turns.map((turn) => {
+      const runDir = findRunLogs(turn.runId);
+      const finalPath = runDir ? path.join(runDir, "final-output.txt") : undefined;
+      const finalOutput =
+        finalPath && fs.existsSync(finalPath)
+          ? fs.readFileSync(finalPath, "utf8").trim()
+          : turn.phaseSummaries.join("\n");
+      return { ...turn, finalOutput };
+    }),
+  };
 }
 
 export function setActiveSession(cwd: string, id: string) {

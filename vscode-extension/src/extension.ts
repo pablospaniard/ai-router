@@ -9,6 +9,7 @@ type Message = {
   action?: string;
   sessionId?: string;
   chatId?: string;
+  url?: string;
 };
 type RouteStatus = { provider: string; model: string; tier: string };
 type SessionSummary = {
@@ -17,12 +18,22 @@ type SessionSummary = {
   updatedAt: string;
   turnCount: number;
 };
+type SessionTranscript = {
+  sessionId: string;
+  originalTask: string;
+  turns: Array<{
+    userPrompt: string;
+    routeSummary: string;
+    finalOutput: string;
+  }>;
+};
 type SidebarChat = {
   id: string;
   title: string;
   session?: SessionSummary;
   activeSession: boolean;
   attachments: string[];
+  hydrated: boolean;
 };
 type ProtocolEvent = {
   type: string;
@@ -82,6 +93,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   protected view?: vscode.WebviewView;
   private child?: ChildProcessWithoutNullStreams;
   private running = false;
+  private runningChatId?: string;
   private stopping = false;
   private awaitingInput = false;
   protected activeSession = false;
@@ -109,6 +121,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   }
 
   protected initializeWebview(webview: vscode.Webview): void {
+    for (const chat of this.sidebarChats.values()) chat.hydrated = false;
     webview.options = { enableScripts: true };
     webview.html = renderWebview([...Array(24)].map(() => Math.random().toString(36)[2]).join(""));
     webview.onDidReceiveMessage((message: Message) => void this.receive(message));
@@ -139,6 +152,8 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
         this.activeSession = Boolean(this.session);
         this.saveActiveChat();
       }
+      const chat = this.sidebarChats.get(this.activeChatId);
+      if (chat?.session) await this.hydrateChat(chat);
       this.post({
         type: "session",
         value: this.session
@@ -149,6 +164,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
       });
     } else if (message.type === "newTab") await this.newTab();
     else if (message.type === "closeTab" && message.chatId) this.closeTab(message.chatId);
+    else if (message.type === "openLink" && message.url) await this.openLink(message.url);
     else if (message.type === "openSession" && message.sessionId)
       await this.openSessionTab(message.sessionId);
     else if (message.type === "switchTab" && message.chatId) this.switchTab(message.chatId);
@@ -160,9 +176,13 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
 
   private async prompt(text: string): Promise<void> {
     if (this.running) {
-      if (this.awaitingInput && this.child?.stdin.writable) {
+      if (
+        this.activeChatId === this.runningChatId &&
+        this.awaitingInput &&
+        this.child?.stdin.writable
+      ) {
         this.awaitingInput = false;
-        this.postState();
+        this.postState(this.runningChatId);
         this.child.stdin.write(`${text}\n`);
       } else {
         this.notice("AIRO is already working on a request.");
@@ -182,20 +202,41 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
       : "";
     this.attachments = [];
     this.post({ type: "attachments", files: [] });
+    const chatId = this.activeChatId;
     const result = await this.run(this.taskArgs(text + attached), true, text);
     if (result.started) {
-      this.activeSession = true;
-      if (!this.session) {
+      const chat = this.sidebarChats.get(chatId);
+      if (!chat) return;
+      chat.activeSession = true;
+      if (!chat.session) {
         const sessionResult = await runCommand(["session", "--json"]);
         try {
           const session = JSON.parse(sessionResult.output) as SessionSummary | null;
-          if (session?.sessionId) this.session = session;
+          if (session?.sessionId) chat.session = session;
         } catch {
           // Continue mode remains available as a fallback for older CLI versions.
         }
       }
-      this.saveActiveChat();
+      if (this.activeChatId === chatId) {
+        this.session = chat.session;
+        this.activeSession = chat.activeSession;
+        this.saveActiveChat();
+      } else {
+        this.replaceDraftId(chatId, chat);
+      }
+      chat.hydrated = true;
     }
+  }
+
+  private async openLink(value: string): Promise<void> {
+    let uri: vscode.Uri;
+    try {
+      uri = vscode.Uri.parse(value, true);
+    } catch {
+      return;
+    }
+    if (uri.scheme !== "https" && uri.scheme !== "http") return;
+    await vscode.env.openExternal(uri);
   }
 
   private async slash(input: string): Promise<void> {
@@ -261,9 +302,10 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   }
 
   private stop(): void {
-    if (!this.running || !this.child || this.stopping) return;
+    if (!this.running || this.activeChatId !== this.runningChatId || !this.child || this.stopping)
+      return;
     this.stopping = this.child.kill();
-    this.postState();
+    this.postState(this.runningChatId);
     if (!this.stopping) this.notice("AIRO could not stop the current run.");
   }
 
@@ -312,11 +354,13 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
       this.notice("Open a workspace folder before starting AIRO.");
       return Promise.resolve({ code: null, output: "", started: false });
     }
-    if (showOutput) this.post({ type: "start", label });
+    const chatId = this.activeChatId;
+    if (showOutput) this.postToChat(chatId, { type: "start", label });
     this.running = true;
+    this.runningChatId = chatId;
     this.stopping = false;
     this.awaitingInput = false;
-    this.postState();
+    this.postState(chatId);
     return new Promise((resolve) => {
       let output = "";
       let humanOutput = "";
@@ -341,14 +385,15 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
         started = true;
       } catch (error) {
         this.running = false;
-        this.postState();
-        this.notice(`Could not start AIRO: ${String(error)}`);
+        this.runningChatId = undefined;
+        this.postState(chatId);
+        this.notice(`Could not start AIRO: ${String(error)}`, chatId);
         return resolve({ code: null, output, started });
       }
 
       const handleProtocol = (event: ProtocolEvent): void => {
         if (event.type === "route" && event.provider && event.model && event.tier) {
-          this.post({
+          this.postToChat(chatId, {
             type: "route",
             provider: event.provider,
             model: event.model,
@@ -356,13 +401,13 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
           });
         } else if ((event.type === "input" || event.type === "permission") && event.question) {
           this.awaitingInput = true;
-          this.post({
+          this.postToChat(chatId, {
             type: event.type === "permission" ? "permission" : "interaction",
             text: event.question,
           });
-          this.postState();
+          this.postState(chatId);
         } else if (event.type === "phase" && event.kind && event.state) {
-          this.post({
+          this.postToChat(chatId, {
             type: "phase",
             state: event.state,
             kind: event.kind,
@@ -375,7 +420,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
           });
         } else if (event.type === "final" && event.text) {
           hasFinal = true;
-          this.post({ type: "final", text: event.text });
+          this.postToChat(chatId, { type: "final", text: event.text });
         }
       };
       const handleLine = (line: string, newline: boolean): void => {
@@ -389,7 +434,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
         }
         const text = line + (newline ? "\n" : "");
         humanOutput += text;
-        if (showOutput) this.post({ type: "activity", text });
+        if (showOutput) this.postToChat(chatId, { type: "activity", text });
       };
       const write = (data: Buffer, stream: "stdout" | "stderr"): void => {
         const text = data.toString();
@@ -402,23 +447,24 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
       };
       child.stdout.on("data", (data: Buffer) => write(data, "stdout"));
       child.stderr.on("data", (data: Buffer) => write(data, "stderr"));
-      child.on("error", (error) => this.notice(`Could not start AIRO: ${error.message}`));
+      child.on("error", (error) => this.notice(`Could not start AIRO: ${error.message}`, chatId));
       child.on("close", (code) => {
         const stopped = this.stopping;
         if (stdoutBuffer) handleLine(stdoutBuffer, false);
         if (stderrBuffer) handleLine(stderrBuffer, false);
         this.child = undefined;
         this.running = false;
+        this.runningChatId = undefined;
         this.stopping = false;
         this.awaitingInput = false;
-        this.postState();
+        this.postState(chatId);
         if (!stopped && showOutput && !hasFinal && humanOutput.trim()) {
-          this.post({
+          this.postToChat(chatId, {
             type: code === 0 ? "final" : "failure",
             text: this.plainText(humanOutput).trim(),
           });
         }
-        if (showOutput) this.post({ type: "end", code, stopped });
+        if (showOutput) this.postToChat(chatId, { type: "end", code, stopped });
         resolve({ code, output, started });
       });
     });
@@ -441,6 +487,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
       session,
       activeSession: Boolean(session),
       attachments: [],
+      hydrated: false,
     };
   }
 
@@ -453,15 +500,17 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     if (this.session && chat.title === "New chat") {
       chat.title = chatTitle(this.session.description);
     }
-    if (this.session && chat.id.startsWith("draft-")) {
-      const oldId = chat.id;
-      this.sidebarChats.delete(chat.id);
-      chat.id = this.session.sessionId;
-      this.activeChatId = chat.id;
-      this.sidebarChats.set(chat.id, chat);
-      this.post({ type: "replaceTabId", oldId, newId: chat.id });
-      this.postTabs();
-    }
+    this.replaceDraftId(chat.id, chat);
+  }
+
+  private replaceDraftId(oldId: string, chat: SidebarChat): void {
+    if (!chat.session || !chat.id.startsWith("draft-")) return;
+    this.sidebarChats.delete(oldId);
+    chat.id = chat.session.sessionId;
+    if (this.activeChatId === oldId) this.activeChatId = chat.id;
+    this.sidebarChats.set(chat.id, chat);
+    this.post({ type: "replaceTabId", oldId, newId: chat.id });
+    this.postTabs();
   }
 
   private loadChat(chat: SidebarChat): void {
@@ -472,7 +521,6 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   }
 
   private async newTab(): Promise<void> {
-    if (this.running) return this.notice("Stop the current run before opening another chat.");
     this.saveActiveChat();
     const chat = this.createChatState();
     this.sidebarChats.set(chat.id, chat);
@@ -487,7 +535,6 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
 
   private switchTab(chatId: string): void {
     if (chatId === this.activeChatId) return;
-    if (this.running) return this.notice("Stop the current run before switching chats.");
     const chat = this.sidebarChats.get(chatId);
     if (!chat) return;
     this.saveActiveChat();
@@ -497,7 +544,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   private closeTab(chatId: string): void {
     const chat = this.sidebarChats.get(chatId);
     if (!chat) return;
-    if (chatId === this.activeChatId && this.running) {
+    if (chatId === this.runningChatId) {
       this.notice("Stop the current run before closing this chat.");
       return;
     }
@@ -553,7 +600,6 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   }
 
   private async openSessionTab(sessionId: string): Promise<void> {
-    if (this.running) return this.notice("Stop the current run before opening another chat.");
     this.saveActiveChat();
     const existing = [...this.sidebarChats.values()].find(
       (chat) => chat.session?.sessionId === sessionId,
@@ -561,6 +607,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     if (existing) {
       this.activateChat(existing);
       this.postTabs();
+      await this.hydrateChat(existing);
       return;
     }
     const session = (await listSessionSummaries()).find((item) => item.sessionId === sessionId);
@@ -569,6 +616,20 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     this.sidebarChats.set(chat.id, chat);
     this.activateChat(chat);
     this.postTabs();
+    await this.hydrateChat(chat);
+  }
+
+  private async hydrateChat(chat: SidebarChat): Promise<void> {
+    if (chat.hydrated || !chat.session) return;
+    const result = await runCommand(["session", chat.session.sessionId, "--json"]);
+    try {
+      const transcript = JSON.parse(result.output) as SessionTranscript;
+      if (!transcript || !Array.isArray(transcript.turns)) return;
+      this.postToChat(chat.id, { type: "restore", turns: transcript.turns });
+      chat.hydrated = true;
+    } catch {
+      this.notice("AIRO could not restore this chat's saved transcript.", chat.id);
+    }
   }
 
   private postTabs(): void {
@@ -583,17 +644,22 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     return value.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"), "");
   }
 
-  private postState(): void {
-    this.post({
+  private postState(chatId = this.activeChatId): void {
+    const isRunningChat = this.running && this.runningChatId === chatId;
+    this.postToChat(chatId, {
       type: "state",
-      running: this.running,
-      stopping: this.stopping,
-      awaitingInput: this.awaitingInput,
+      running: isRunningChat,
+      stopping: isRunningChat && this.stopping,
+      awaitingInput: isRunningChat && this.awaitingInput,
     });
   }
 
-  private notice(value: string): void {
-    this.post({ type: "notice", value });
+  private notice(value: string, chatId = this.activeChatId): void {
+    this.postToChat(chatId, { type: "notice", value });
+  }
+
+  private postToChat(chatId: string, message: Record<string, unknown>): void {
+    this.post({ ...message, chatId });
   }
 
   protected post(message: Record<string, unknown>): void {

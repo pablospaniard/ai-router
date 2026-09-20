@@ -34,6 +34,7 @@ import {
   getActiveSession,
   listSessions,
   loadSession,
+  loadSessionTranscript,
   setActiveSession,
 } from "./session.js";
 import { findRunLogs, followFile, logsRoot, recentRunDirs, RunLogger } from "./logging.js";
@@ -888,17 +889,20 @@ async function main() {
       }
       return;
     }
-    const s = getActiveSession();
+    const requestedId = raw[1] && raw[1] !== "--json" ? raw[1] : undefined;
+    const s = requestedId ? loadSession(requestedId) : getActiveSession();
     if (json) {
       console.log(
         JSON.stringify(
           s
-            ? {
-                sessionId: s.sessionId,
-                description: s.originalTask.replace(/\s+/g, " ").trim().slice(0, 160),
-                updatedAt: s.updatedAt,
-                turnCount: s.turns.length,
-              }
+            ? requestedId
+              ? loadSessionTranscript(s.sessionId)
+              : {
+                  sessionId: s.sessionId,
+                  description: s.originalTask.replace(/\s+/g, " ").trim().slice(0, 160),
+                  updatedAt: s.updatedAt,
+                  turnCount: s.turns.length,
+                }
             : null,
         ),
       );
