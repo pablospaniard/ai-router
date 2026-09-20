@@ -4,7 +4,7 @@ import { agentColor, command, outputWidth, sectionRule, ui, visibleLength } from
 import { VERSION } from "./version.js";
 
 function defaultsTable(config: RouterConfig): string[] {
-  const rows = (["codex", "claude"] as const).flatMap((agent) =>
+  const rows = (["codex", "claude", "gemini", "copilot"] as const).flatMap((agent) =>
     (["fast", "balanced", "deep"] as const).map((tier) => {
       const profile = config[agent].models[tier];
       return [agent, tier, profile.model, profile.effort ?? "auto"];
@@ -19,7 +19,7 @@ function defaultsTable(config: RouterConfig): string[] {
       .map((value, index) => {
         const padded = value.padEnd(widths[index]);
         return colorProvider && index === 0
-          ? agentColor(value as "claude" | "codex", padded)
+          ? agentColor(value as "claude" | "codex" | "gemini" | "copilot", padded)
           : padded;
       })
       .join("  ");
@@ -49,7 +49,7 @@ export function firstRunWelcome(config: RouterConfig = DEFAULT_CONFIG): string {
     ui.gray(`Version ${VERSION}`),
     "",
     sectionRule("Welcome"),
-    `${ui.bold("AIRO")} routes each coding task between ${agentColor("claude", "Claude Code")} and ${agentColor("codex", "Codex CLI")}, choosing a model tier for the work.`,
+    `${ui.bold("AIRO")} routes each coding task between ${agentColor("claude", "Claude Code")}, ${agentColor("codex", "Codex CLI")}, ${agentColor("gemini", "Gemini CLI")}, and ${agentColor("copilot", "GitHub Copilot CLI")}, choosing a model tier for the work.`,
     ui.gray("It uses your existing provider CLI logins; AIRO does not require another API key."),
     "",
     sectionRule("Initial defaults"),
