@@ -54,6 +54,7 @@ export const DEFAULT_CONFIG: RouterConfig = {
     minimumSamples: 2,
     halfLifeDays: 90,
     explorationRate: 0,
+    repositoryScoped: true,
   },
   logging: { level: "live", persist: true },
   orchestration: {

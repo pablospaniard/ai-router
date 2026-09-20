@@ -260,7 +260,7 @@ export async function orchestrate(
     runId,
     sessionId: options.session?.sessionId,
     level: options.logLevel ?? config.logging.level,
-    persist: config.logging.persist,
+    persist: config.logging.persist && !options.dryRun,
   });
   let plans = planPhases(task, config);
   const executions: PhaseExecution[] = [];
@@ -280,6 +280,12 @@ export async function orchestrate(
       console.log(
         `  ${ui.gray(String(i + 1).padStart(2) + ".")} ${ui.bold(p.kind.padEnd(9))} ${ui.cyan("→")} ${agentColor(route.agent, route.agent)}${ui.gray("/")}${ui.cyan(route.model)} ${ui.gray("effort=")}${ui.magenta(route.effort)} ${ui.gray("tier=")}${tierColor(route.modelTier)} ${ui.gray("—")} ${p.title}`,
       );
+      if (options.explain) {
+        for (const reason of route.modelReasons) console.log(`     ${ui.gray("·")} ${reason}`);
+        console.log(
+          `     ${ui.gray("·")} learning confidence ${((route.learningConfidence ?? 0) * 100).toFixed(0)}%${route.expectedUtility === undefined ? "" : ` · expected utility ${route.expectedUtility.toFixed(2)}`}`,
+        );
+      }
     }
     return { runId, phases: [], exitCode: 0 };
   }

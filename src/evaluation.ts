@@ -37,8 +37,14 @@ export function evaluateRoute(
   const failed = exitCode !== 0 || FAILURE.test(output);
   const verificationClaim = VERIFIED.test(output);
   const unverified = UNVERIFIED.test(output);
-  const verified = !failed && !unverified && (verificationClaim || phaseKind === "test");
-  const regressions = REGRESSION.test(output) && phaseKind === "review" ? 1 : 0;
+  // A provider process exiting successfully is not proof that the underlying checks ran.
+  const verified = !failed && !unverified && verificationClaim;
+  const regressionDenied =
+    /\b(?:no|without)\s+(?:new\s+)?regressions?\b|\bfound no (?:issues?|regressions?)\b/i.test(
+      output,
+    );
+  const regressions =
+    REGRESSION.test(output) && !regressionDenied && phaseKind === "review" ? 1 : 0;
   if (exitCode === 0) signals.push("provider exited successfully");
   else signals.push(`provider exited with code ${exitCode}`);
   if (verificationClaim) signals.push("output reports passing verification");

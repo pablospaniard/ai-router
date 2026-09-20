@@ -247,7 +247,7 @@ test("routes with learned feedback for Gemini and Copilot", () => {
       appendHistory(current.history, {
         id: agent,
         timestamp: new Date().toISOString(),
-        cwd: "/repo",
+        cwd: process.cwd(),
         task: `repair ${agent} parser`,
         agent,
         modelTier: "fast",

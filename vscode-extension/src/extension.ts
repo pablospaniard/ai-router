@@ -297,9 +297,15 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     if (["/mode", "/agent", "/tier", "/log"].includes(command))
       return this.notice("Routing preferences are managed in VS Code Settings.");
     if (command === "/feedback") {
-      if (!/^(good|bad)(\s|$)/.test(argument))
-        return this.notice("Usage: /feedback good|bad [note]");
+      if (!/^(?:good|bad)(?:\s|$)|^phase\s+\S+\s+(?:good|bad)(?:\s|$)/.test(argument))
+        return this.notice(
+          "Usage: /feedback good|bad [note] or /feedback phase <id> good|bad [note]",
+        );
       await this.run(["feedback", ...parts], true, "Feedback");
+      return;
+    }
+    if (command === "/learning") {
+      await this.run(["learning", ...parts], true, "Learning");
       return;
     }
     if (commands[command]) {

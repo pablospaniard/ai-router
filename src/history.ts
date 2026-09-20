@@ -277,14 +277,16 @@ function latestFeedback(
   record: HistoryRecord,
   feedback: FeedbackRecord[],
 ): FeedbackRecord | undefined {
-  return feedback
-    .filter(
-      (item) =>
-        (item.scope === "phase" && item.targetId === record.id) ||
-        (item.scope === "run" && item.targetId === (record.runId ?? record.id)),
+  const latest = (items: FeedbackRecord[]) =>
+    items.sort((a, b) => a.timestamp.localeCompare(b.timestamp)).at(-1);
+  return (
+    latest(feedback.filter((item) => item.scope === "phase" && item.targetId === record.id)) ??
+    latest(
+      feedback.filter(
+        (item) => item.scope === "run" && item.targetId === (record.runId ?? record.id),
+      ),
     )
-    .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
-    .at(-1);
+  );
 }
 
 function creditFor(record: HistoryRecord): number {
@@ -329,10 +331,13 @@ export function learningHints(task: string, config: HistoryConfig): LearningHint
   const feedback = readFeedback(config);
   const halfLife = Math.max(1, config.halfLifeDays ?? 90) * 86_400_000;
   const now = Date.now();
+  const currentCwd = path.resolve(process.cwd());
   const similar = readHistory(config)
+    .filter((record) => !config.repositoryScoped || path.resolve(record.cwd) === currentCwd)
     .map((r) => ({ r, reward: rewardFor(r, feedback), sim: semanticSimilarity(task, r) }))
-    .filter((x): x is typeof x & { reward: { value: number; confidence: number; explicit: boolean } } =>
-      Boolean(x.reward),
+    .filter(
+      (x): x is typeof x & { reward: { value: number; confidence: number; explicit: boolean } } =>
+        Boolean(x.reward),
     )
     .filter((x) => x.sim >= config.similarityThreshold)
     .sort((a, b) => b.sim - a.sim)

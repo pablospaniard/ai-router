@@ -43,6 +43,8 @@ export interface HistoryConfig {
   halfLifeDays?: number;
   /** Fraction of routing decisions that may explore an uncertain route. Zero disables exploration. */
   explorationRate?: number;
+  /** Keep learned evidence isolated to the current repository. */
+  repositoryScoped?: boolean;
 }
 
 export type TaskCategory = "debug" | "implement" | "review" | "research" | "test" | "general";
@@ -140,6 +142,7 @@ export interface RouteResult {
   complexity: number;
   claudeScore: number;
   codexScore: number;
+  agentScores?: Record<Agent, number>;
   reasons: ScoreReason[];
   modelReasons: string[];
   matchedRule?: string;

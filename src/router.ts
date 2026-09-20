@@ -398,6 +398,7 @@ export function routeTask(task: string, config: RouterConfig): RouteResult {
     complexity,
     claudeScore,
     codexScore,
+    agentScores: scores,
     reasons,
     modelReasons,
     matchedRule,

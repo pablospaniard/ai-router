@@ -328,7 +328,7 @@ async function singleRun(
     runId: singleRunId,
     sessionId: session?.sessionId,
     level: args.logLevel ?? config.logging.level,
-    persist: config.logging.persist,
+    persist: config.logging.persist && !args.dryRun,
   });
   const logMeta = {
     phaseIndex: 1,
@@ -343,11 +343,23 @@ async function singleRun(
   if (path) console.log(`${statusIcon("info")} ${brand()} ${ui.gray("config")} ${ui.cyan(path)}`);
   if (args.explain || args.dryRun) {
     console.log(
-      `${statusIcon("info")} ${ui.bold("provider scores")} ${agentColor("claude", `Claude ${routed.claudeScore.toFixed(1)}`)} ${ui.gray("/")} ${agentColor("codex", `Codex ${routed.codexScore.toFixed(1)}`)}`,
+      `${statusIcon("info")} ${ui.bold("provider scores")} ${(
+        ["claude", "codex", "gemini", "copilot"] as Agent[]
+      )
+        .map((agent) =>
+          agentColor(agent, `${agent} ${(routed.agentScores?.[agent] ?? 0).toFixed(1)}`),
+        )
+        .join(ui.gray(" / "))}`,
     );
     for (const r of routed.reasons)
       console.log(
         `  ${agentColor(r.agent, r.agent === "claude" ? "C" : "X")} ${ui.yellow(`${r.points >= 0 ? "+" : ""}${r.points.toFixed(1)}`)} ${ui.gray("·")} ${r.reason}`,
+      );
+    for (const reason of routed.modelReasons)
+      console.log(`  ${ui.cyan("M")} ${ui.gray("·")} ${reason}`);
+    if (routed.learningConfidence !== undefined)
+      console.log(
+        `  ${ui.magenta("L")} ${ui.gray("·")} learning confidence ${(routed.learningConfidence * 100).toFixed(0)}%${routed.expectedUtility === undefined ? "" : ` · expected utility ${routed.expectedUtility.toFixed(2)}`}`,
       );
   }
   if (args.dryRun)
@@ -1055,11 +1067,11 @@ async function main() {
   let session: SessionState | undefined;
   if (args.sessionId) {
     session = loadSession(args.sessionId);
-    setActiveSession(process.cwd(), session.sessionId);
+    if (!args.dryRun) setActiveSession(process.cwd(), session.sessionId);
   } else if (args.continueMode) {
     session = getActiveSession();
     if (!session) throw new Error('No active session. Start with: airo session new "task"');
-  } else session = createSession(args.task);
+  } else if (!args.dryRun) session = createSession(args.task);
   process.exitCode = await execute(args, session, config, path);
 }
 
