@@ -59,11 +59,6 @@ function activate(context) {
 class SidebarProvider {
     session;
     view;
-    child;
-    running = false;
-    runningChatId;
-    stopping = false;
-    awaitingInput = false;
     activeSession = false;
     attachments = [];
     attachmentPreviews = new Map();
@@ -77,7 +72,8 @@ class SidebarProvider {
         this.sidebarChats.set(chat.id, chat);
     }
     dispose() {
-        this.child?.kill();
+        for (const chat of this.sidebarChats.values())
+            chat.child?.kill();
     }
     resolveWebviewView(view) {
         this.view = view;
@@ -161,13 +157,14 @@ class SidebarProvider {
             await this.prompt(message.text?.trim() || "Please inspect the attached file(s).");
     }
     async prompt(text) {
-        if (this.running) {
-            if (this.activeChatId === this.runningChatId &&
-                this.awaitingInput &&
-                this.child?.stdin.writable) {
-                this.awaitingInput = false;
-                this.postState(this.runningChatId);
-                this.child.stdin.write(`${text}\n`);
+        const activeChat = this.sidebarChats.get(this.activeChatId);
+        if (!activeChat)
+            return;
+        if (activeChat.running) {
+            if (activeChat.awaitingInput && activeChat.child?.stdin.writable) {
+                activeChat.awaitingInput = false;
+                this.postState(activeChat.id);
+                activeChat.child.stdin.write(`${text}\n`);
             }
             return;
         }
@@ -323,11 +320,12 @@ class SidebarProvider {
             await this.run(commands[action], true, action);
     }
     stop() {
-        if (!this.running || this.activeChatId !== this.runningChatId || !this.child || this.stopping)
+        const chat = this.sidebarChats.get(this.activeChatId);
+        if (!chat?.running || !chat.child || chat.stopping)
             return;
-        this.stopping = this.child.kill();
-        this.postState(this.runningChatId);
-        if (!this.stopping)
+        chat.stopping = chat.child.kill();
+        this.postState(chat.id);
+        if (!chat.stopping)
             this.notice("AIRO could not stop the current run.");
     }
     async pickAttachments(chatId = this.activeChatId) {
@@ -449,7 +447,11 @@ class SidebarProvider {
         return [...args, "--log", log, task];
     }
     run(args, showOutput, label = args.join(" ")) {
-        if (this.running) {
+        const chatId = this.activeChatId;
+        const chat = this.sidebarChats.get(chatId);
+        if (!chat)
+            return Promise.resolve({ code: null, output: "", started: false });
+        if (chat.running) {
             return Promise.resolve({ code: null, output: "", started: false });
         }
         const folder = vscode.workspace.workspaceFolders?.[0];
@@ -457,13 +459,11 @@ class SidebarProvider {
             this.notice("Open a workspace folder before starting AIRO.");
             return Promise.resolve({ code: null, output: "", started: false });
         }
-        const chatId = this.activeChatId;
         if (showOutput)
             this.postToChat(chatId, { type: "start", label });
-        this.running = true;
-        this.runningChatId = chatId;
-        this.stopping = false;
-        this.awaitingInput = false;
+        chat.running = true;
+        chat.stopping = false;
+        chat.awaitingInput = false;
         this.postAllStates();
         return new Promise((resolve) => {
             let output = "";
@@ -481,12 +481,11 @@ class SidebarProvider {
                     stdio: ["pipe", "pipe", "pipe"],
                     env: { ...process.env, NO_COLOR: "1", AIRO_STREAM_PROTOCOL: "1" },
                 });
-                this.child = child;
+                chat.child = child;
                 started = true;
             }
             catch (error) {
-                this.running = false;
-                this.runningChatId = undefined;
+                chat.running = false;
                 this.postAllStates();
                 this.notice(`Could not start AIRO: ${String(error)}`, chatId);
                 return resolve({ code: null, output, started });
@@ -501,7 +500,7 @@ class SidebarProvider {
                     });
                 }
                 else if ((event.type === "input" || event.type === "permission") && event.question) {
-                    this.awaitingInput = true;
+                    chat.awaitingInput = true;
                     this.postToChat(chatId, {
                         type: event.type === "permission" ? "permission" : "interaction",
                         text: event.question,
@@ -557,16 +556,15 @@ class SidebarProvider {
             child.stderr.on("data", (data) => write(data, "stderr"));
             child.on("error", (error) => this.notice(`Could not start AIRO: ${error.message}`, chatId));
             child.on("close", (code) => {
-                const stopped = this.stopping;
+                const stopped = chat.stopping;
                 if (stdoutBuffer)
                     handleLine(stdoutBuffer, false);
                 if (stderrBuffer)
                     handleLine(stderrBuffer, false);
-                this.child = undefined;
-                this.running = false;
-                this.runningChatId = undefined;
-                this.stopping = false;
-                this.awaitingInput = false;
+                chat.child = undefined;
+                chat.running = false;
+                chat.stopping = false;
+                chat.awaitingInput = false;
                 this.postAllStates();
                 if (!stopped && showOutput && !hasFinal && humanOutput.trim()) {
                     this.postToChat(chatId, {
@@ -598,6 +596,9 @@ class SidebarProvider {
             attachments: [],
             attachmentPreviews: new Map(),
             hydrated: false,
+            running: false,
+            stopping: false,
+            awaitingInput: false,
         };
     }
     saveActiveChat() {
@@ -656,7 +657,7 @@ class SidebarProvider {
         const chat = this.sidebarChats.get(chatId);
         if (!chat)
             return;
-        if (chatId === this.runningChatId) {
+        if (chat.running) {
             this.notice("Stop the current run before closing this chat.");
             return;
         }
@@ -746,13 +747,15 @@ class SidebarProvider {
         return value.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"), "");
     }
     postState(chatId = this.activeChatId) {
-        const isRunningChat = this.running && this.runningChatId === chatId;
+        const chat = this.sidebarChats.get(chatId);
+        if (!chat)
+            return;
         this.postToChat(chatId, {
             type: "state",
-            busy: this.running,
-            running: isRunningChat,
-            stopping: isRunningChat && this.stopping,
-            awaitingInput: isRunningChat && this.awaitingInput,
+            busy: chat.running,
+            running: chat.running,
+            stopping: chat.stopping,
+            awaitingInput: chat.awaitingInput,
         });
     }
     postAllStates() {

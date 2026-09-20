@@ -36,6 +36,16 @@ request → route → analyze → implement → test → review
   <img src="docs/airo-features.png" alt="AIRO routes a task through adaptive phases, parallel chats, VS Code, and token-aware routing" width="960">
 </p>
 
+## Decision routing in practice
+
+<p align="center">
+  <img src="docs/airo-routing-examples.svg" alt="AIRO routing Model A, Model B, and Model C through a parallel fork, a feedback loop, and a short path" width="100%">
+</p>
+
+AIRO makes a new routing decision for every phase, not just the job as a whole. A production fix can split into parallel investigations and rejoin for a patch, while a new capability can loop back through another build pass when review changes the task.
+
+That means one job can be served by multiple models and providers, and another run can use a different order—or skip phases entirely—when the task calls for it. Model A, Model B, and Model C are illustrative abstractions, not fixed roles or providers; model selection is configurable around what is available to your account.
+
 ### Built for the way agent work actually happens
 
 - **Seamless local integration.** Keep using the Claude Code and Codex CLI accounts you already have. AIRO runs in your repository, keeps the shared working tree, and needs no proxy, copied API keys, or separate hosted workspace.
