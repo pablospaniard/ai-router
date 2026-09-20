@@ -69,6 +69,7 @@ class SidebarProvider {
     view;
     child;
     running = false;
+    stopping = false;
     awaitingInput = false;
     activeSession = false;
     attachments = [];
@@ -177,6 +178,8 @@ class SidebarProvider {
         }
         if (action === "new")
             return this.newSession("AIRO sidebar session");
+        if (action === "stop")
+            return this.stop();
         if (action === "feedback") {
             await this.run(["feedback", text === "bad" ? "bad" : "good"], true, "Feedback");
             return;
@@ -191,6 +194,14 @@ class SidebarProvider {
         };
         if (commands[action])
             await this.run(commands[action], true, action);
+    }
+    stop() {
+        if (!this.running || !this.child || this.stopping)
+            return;
+        this.stopping = this.child.kill();
+        this.postState();
+        if (!this.stopping)
+            this.notice("AIRO could not stop the current run.");
     }
     async newSession(title) {
         const result = await this.run(["session", "new", title], true, "New session");
@@ -240,6 +251,7 @@ class SidebarProvider {
         if (showOutput)
             this.post({ type: "start", label });
         this.running = true;
+        this.stopping = false;
         this.awaitingInput = false;
         this.postState();
         return new Promise((resolve) => {
@@ -256,7 +268,7 @@ class SidebarProvider {
                     shell: false,
                     windowsHide: true,
                     stdio: ["pipe", "pipe", "pipe"],
-                    env: { ...process.env, AIRO_COLOR: "1", AIRO_STREAM_PROTOCOL: "1" },
+                    env: { ...process.env, NO_COLOR: "1", AIRO_STREAM_PROTOCOL: "1" },
                 });
                 this.child = child;
                 started = true;
@@ -320,22 +332,24 @@ class SidebarProvider {
             child.stderr.on("data", (data) => write(data, "stderr"));
             child.on("error", (error) => this.notice(`Could not start AIRO: ${error.message}`));
             child.on("close", (code) => {
+                const stopped = this.stopping;
                 if (stdoutBuffer)
                     handleLine(stdoutBuffer, false);
                 if (stderrBuffer)
                     handleLine(stderrBuffer, false);
                 this.child = undefined;
                 this.running = false;
+                this.stopping = false;
                 this.awaitingInput = false;
                 this.postState();
-                if (showOutput && !hasFinal && humanOutput.trim()) {
+                if (!stopped && showOutput && !hasFinal && humanOutput.trim()) {
                     this.post({
                         type: code === 0 ? "final" : "failure",
                         text: this.plainText(humanOutput).trim(),
                     });
                 }
                 if (showOutput)
-                    this.post({ type: "end", code });
+                    this.post({ type: "end", code, stopped });
                 resolve({ code, output, started });
             });
         });
@@ -353,7 +367,12 @@ class SidebarProvider {
         return value.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"), "");
     }
     postState() {
-        this.post({ type: "state", running: this.running, awaitingInput: this.awaitingInput });
+        this.post({
+            type: "state",
+            running: this.running,
+            stopping: this.stopping,
+            awaitingInput: this.awaitingInput,
+        });
     }
     notice(value) {
         this.post({ type: "notice", value });

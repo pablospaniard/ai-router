@@ -56,6 +56,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   private view?: vscode.WebviewView;
   private child?: ChildProcessWithoutNullStreams;
   private running = false;
+  private stopping = false;
   private awaitingInput = false;
   private activeSession = false;
   private attachments: string[] = [];
@@ -169,6 +170,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
       return;
     }
     if (action === "new") return this.newSession("AIRO sidebar session");
+    if (action === "stop") return this.stop();
     if (action === "feedback") {
       await this.run(["feedback", text === "bad" ? "bad" : "good"], true, "Feedback");
       return;
@@ -182,6 +184,13 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
       doctor: ["doctor"],
     };
     if (commands[action]) await this.run(commands[action], true, action);
+  }
+
+  private stop(): void {
+    if (!this.running || !this.child || this.stopping) return;
+    this.stopping = this.child.kill();
+    this.postState();
+    if (!this.stopping) this.notice("AIRO could not stop the current run.");
   }
 
   private async newSession(title: string): Promise<void> {
@@ -232,6 +241,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     }
     if (showOutput) this.post({ type: "start", label });
     this.running = true;
+    this.stopping = false;
     this.awaitingInput = false;
     this.postState();
     return new Promise((resolve) => {
@@ -251,7 +261,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
             shell: false,
             windowsHide: true,
             stdio: ["pipe", "pipe", "pipe"],
-            env: { ...process.env, AIRO_COLOR: "1", AIRO_STREAM_PROTOCOL: "1" },
+            env: { ...process.env, NO_COLOR: "1", AIRO_STREAM_PROTOCOL: "1" },
           },
         );
         this.child = child;
@@ -309,19 +319,21 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
       child.stderr.on("data", (data: Buffer) => write(data, "stderr"));
       child.on("error", (error) => this.notice(`Could not start AIRO: ${error.message}`));
       child.on("close", (code) => {
+        const stopped = this.stopping;
         if (stdoutBuffer) handleLine(stdoutBuffer, false);
         if (stderrBuffer) handleLine(stderrBuffer, false);
         this.child = undefined;
         this.running = false;
+        this.stopping = false;
         this.awaitingInput = false;
         this.postState();
-        if (showOutput && !hasFinal && humanOutput.trim()) {
+        if (!stopped && showOutput && !hasFinal && humanOutput.trim()) {
           this.post({
             type: code === 0 ? "final" : "failure",
             text: this.plainText(humanOutput).trim(),
           });
         }
-        if (showOutput) this.post({ type: "end", code });
+        if (showOutput) this.post({ type: "end", code, stopped });
         resolve({ code, output, started });
       });
     });
@@ -342,7 +354,12 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   }
 
   private postState(): void {
-    this.post({ type: "state", running: this.running, awaitingInput: this.awaitingInput });
+    this.post({
+      type: "state",
+      running: this.running,
+      stopping: this.stopping,
+      awaitingInput: this.awaitingInput,
+    });
   }
 
   private notice(value: string): void {
