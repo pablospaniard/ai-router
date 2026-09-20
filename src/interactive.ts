@@ -22,7 +22,13 @@ export type InteractiveAction =
   | { kind: "usage"; limit?: number }
   | { kind: "logs" }
   | { kind: "attach"; path: string }
-  | { kind: "feedback"; rating: FeedbackRating; note?: string }
+  | { kind: "feedback"; rating: FeedbackRating; note?: string; phaseId?: string }
+  | {
+      kind: "learning";
+      action: "status" | "explain" | "reset";
+      targetId?: string;
+      confirmed?: boolean;
+    }
   | { kind: "clear" }
   | { kind: "set-mode"; value: InteractiveMode }
   | { kind: "set-agent"; value: "auto" | Agent }
@@ -41,6 +47,7 @@ export const INTERACTIVE_COMMANDS = [
   "/logs",
   "/attach",
   "/feedback",
+  "/learning",
   "/mode",
   "/agent",
   "/tier",
@@ -94,9 +101,35 @@ export function parseInteractiveInput(input: string): InteractiveAction {
       : { kind: "error", message: "Usage: /attach <file-path>" };
   }
   if (command === "/feedback") {
+    if (first === "phase") {
+      const phaseId = args[1];
+      const rating = args[2]?.toLowerCase();
+      if (!phaseId || (rating !== "good" && rating !== "bad"))
+        return { kind: "error", message: "Usage: /feedback phase <id> good|bad [note]" };
+      return {
+        kind: "feedback",
+        phaseId,
+        rating,
+        note: args.slice(3).join(" ") || undefined,
+      };
+    }
     if (first !== "good" && first !== "bad")
-      return { kind: "error", message: "Usage: /feedback good|bad [note]" };
+      return {
+        kind: "error",
+        message: "Usage: /feedback good|bad [note] | /feedback phase <id> good|bad [note]",
+      };
     return { kind: "feedback", rating: first, note: args.slice(1).join(" ") || undefined };
+  }
+  if (command === "/learning") {
+    if (!first || first === "status") return { kind: "learning", action: "status" };
+    if (first === "explain" && args[1])
+      return { kind: "learning", action: "explain", targetId: args[1] };
+    if (first === "reset")
+      return { kind: "learning", action: "reset", confirmed: args.includes("--yes") };
+    return {
+      kind: "error",
+      message: "Usage: /learning status|explain <run-or-phase-id>|reset --yes",
+    };
   }
   if (command === "/clear") return { kind: "clear" };
   if (command === "/new") return { kind: "new", title: args.join(" ").trim() || undefined };

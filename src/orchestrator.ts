@@ -1,4 +1,4 @@
-import { appendHistory, newHistoryId, newRunId } from "./history.js";
+import { appendHistory, newHistoryId, newRunId, updateHistoryRecord } from "./history.js";
 import { routeTask } from "./router.js";
 import {
   addTokenUsage,
@@ -22,6 +22,7 @@ import { compactSessionContext } from "./session.js";
 import { RunLogger } from "./logging.js";
 import { agentColor, brand, statusIcon, tierColor, ui } from "./ui.js";
 import type { LogLevel } from "./types.js";
+import { evaluateRoute, extractTaskFeatures } from "./evaluation.js";
 
 const CRITICAL =
   /\b(critical|production|prod|sev[ -]?[01]|p[ -]?0|outage|crash|data loss|security|vulnerability|deadlock|race condition)\b/i;
@@ -366,6 +367,12 @@ export async function orchestrate(
 
     const recordId = newHistoryId();
     execution.historyId = recordId;
+    const assessment = evaluateRoute(result.output, result.exitCode, p.kind, {
+      retries: clarificationCount,
+      recoveries: p.kind === "recover" ? 1 : 0,
+      durationMs: execution.durationMs,
+      usage,
+    });
     appendHistory(config.history, {
       id: recordId,
       runId,
@@ -386,7 +393,34 @@ export async function orchestrate(
       durationMs: execution.durationMs,
       outputExcerpt: tail(result.output, config.orchestration.outputTailChars),
       usage,
+      taskFeatures: extractTaskFeatures(task, route.complexity),
+      ...assessment,
     });
+
+    // A later independent review can supply delayed evidence about the implementation route.
+    if (p.kind === "review" && assessment.outcome.regressions > 0) {
+      const implementation = [...executions]
+        .reverse()
+        .find((candidate) => candidate.phase.kind === "implement" && candidate.historyId);
+      if (implementation?.historyId)
+        updateHistoryRecord(config.history, implementation.historyId, (record) => ({
+          ...record,
+          evaluation: record.evaluation
+            ? {
+                ...record.evaluation,
+                taskSatisfied: false,
+                quality: Math.max(0, record.evaluation.quality - 0.3),
+                signals: [
+                  ...record.evaluation.signals,
+                  "later review reported a possible regression",
+                ],
+              }
+            : record.evaluation,
+          outcome: record.outcome
+            ? { ...record.outcome, regressions: record.outcome.regressions + 1 }
+            : record.outcome,
+        }));
+    }
 
     if (
       needsRecovery(execution) &&

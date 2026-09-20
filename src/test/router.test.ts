@@ -145,7 +145,10 @@ test("uses the newest routing instruction and ignores stale session choices", ()
 test("asks for clarification when a routing instruction cannot be resolved", () => {
   const current = config();
   assert.match(routingClarification("use the banana model for this", current) ?? "", /banana/);
-  assert.match(routingClarification("use the banana model. Then explain the error", current) ?? "", /banana/);
+  assert.match(
+    routingClarification("use the banana model. Then explain the error", current) ?? "",
+    /banana/,
+  );
   assert.match(routingClarification("switch to Grok", current) ?? "", /Grok/i);
   assert.equal(routingClarification("switch to the main branch", current), undefined);
   assert.equal(routingClarification("use automatic routing for this review", current), undefined);
@@ -228,7 +231,9 @@ test("ignores malformed custom rule expressions", () => {
 
 test("uses the configured default agent to break score ties", () => {
   const neutralTask = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu";
-  const route = routeTask(neutralTask, config({ defaultAgent: "claude" }));
+  const current = config({ defaultAgent: "claude" });
+  current.history.learningEnabled = false;
+  const route = routeTask(neutralTask, current);
 
   assert.equal(route.agent, "claude");
 });
@@ -241,7 +246,7 @@ test("routes with learned feedback for Gemini and Copilot", () => {
       current.history.path = path.join(dir, `${agent}.jsonl`);
       appendHistory(current.history, {
         id: agent,
-        timestamp: "2026-01-01T00:00:00.000Z",
+        timestamp: new Date().toISOString(),
         cwd: "/repo",
         task: `repair ${agent} parser`,
         agent,

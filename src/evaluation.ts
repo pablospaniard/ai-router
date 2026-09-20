@@ -8,10 +8,14 @@ import type {
   TokenUsage,
 } from "./types.js";
 
-const FAILURE = /(?:^|\n)\s*(?:status:\s*)?(?:failed|unresolved|unable to complete|could not complete)\b/im;
-const VERIFIED = /\b(?:all\s+)?(?:tests?|checks?|build|lint|typecheck)\s+(?:passed|succeeded|completed)|\b0\s+(?:failures?|errors?)\b/i;
-const UNVERIFIED = /\b(?:not|wasn't|were not|couldn't|unable to)\s+(?:run|verify|test)|\bnot\s+verified\b/i;
-const REGRESSION = /\b(?:regression|introduced (?:an? )?(?:bug|issue)|critical issue|test failure)\b/i;
+const FAILURE =
+  /(?:^|\n)\s*(?:status:\s*)?(?:failed|unresolved|unable to complete|could not complete)\b/im;
+const VERIFIED =
+  /\b(?:all\s+)?(?:tests?|checks?|build|lint|typecheck)\s+(?:passed|succeeded|completed)|\b0\s+(?:failures?|errors?)\b/i;
+const UNVERIFIED =
+  /\b(?:not|wasn't|were not|couldn't|unable to)\s+(?:run|verify|test)|\bnot\s+verified\b/i;
+const REGRESSION =
+  /\b(?:regression|introduced (?:an? )?(?:bug|issue)|critical issue|test failure)\b/i;
 
 export function tokenCount(usage?: TokenUsage): number | undefined {
   if (!usage) return undefined;
@@ -42,8 +46,14 @@ export function evaluateRoute(
   if (regressions) signals.push("review reports a possible regression");
   const completion = failed ? 0 : 1;
   const verification = verified ? 1 : unverified ? 0 : 0.5;
-  const confidence = Math.min(1, 0.45 + (verificationClaim ? 0.35 : 0) + (exitCode !== 0 ? 0.2 : 0));
-  const quality = Math.max(0, Math.min(1, completion * 0.55 + verification * 0.35 - regressions * 0.25 + 0.1));
+  const confidence = Math.min(
+    1,
+    0.45 + (verificationClaim ? 0.35 : 0) + (exitCode !== 0 ? 0.2 : 0),
+  );
+  const quality = Math.max(
+    0,
+    Math.min(1, completion * 0.55 + verification * 0.35 - regressions * 0.25 + 0.1),
+  );
   return {
     evaluation: { taskSatisfied: !failed, verified, quality, confidence, signals },
     outcome: {
@@ -92,7 +102,9 @@ const SYNONYMS: Record<string, string> = {
 function normalizedTokens(task: string): string[] {
   return (task.toLowerCase().match(/[a-z0-9_+#.-]{2,}/g) ?? [])
     .map((token) => SYNONYMS[token] ?? token)
-    .filter((token) => !new Set(["the", "and", "for", "with", "this", "that", "please"]).has(token));
+    .filter(
+      (token) => !new Set(["the", "and", "for", "with", "this", "that", "please"]).has(token),
+    );
 }
 
 function hash(value: string): number {
@@ -103,7 +115,10 @@ function hash(value: string): number {
 
 function embedding(tokens: string[], dimensions = 64): number[] {
   const vector = Array<number>(dimensions).fill(0);
-  const features = [...tokens, ...tokens.slice(1).map((token, index) => `${tokens[index]}_${token}`)];
+  const features = [
+    ...tokens,
+    ...tokens.slice(1).map((token, index) => `${tokens[index]}_${token}`),
+  ];
   for (const feature of features) {
     const value = hash(feature);
     vector[value % dimensions] += value & 1 ? 1 : -1;
@@ -128,14 +143,19 @@ export function extractTaskFeatures(task: string, complexity = 2): TaskFeatures 
   };
 }
 
-export function enrichHistoryRecord(record: HistoryRecord, phaseKind = record.phaseKind): HistoryRecord {
+export function enrichHistoryRecord(
+  record: HistoryRecord,
+  phaseKind = record.phaseKind,
+): HistoryRecord {
   const result = evaluateRoute(record.outputExcerpt ?? "", record.exitCode, phaseKind, {
     durationMs: record.durationMs,
     usage: record.usage,
   });
   return {
     ...record,
-    taskFeatures: record.taskFeatures ?? extractTaskFeatures(record.originalTask ?? record.task, record.complexity),
+    taskFeatures:
+      record.taskFeatures ??
+      extractTaskFeatures(record.originalTask ?? record.task, record.complexity),
     evaluation: record.evaluation ?? result.evaluation,
     outcome: record.outcome ?? result.outcome,
   };

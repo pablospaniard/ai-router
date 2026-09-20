@@ -349,8 +349,39 @@ export function routeTask(task: string, config: RouterConfig): RouteResult {
     }
   }
 
+  if (!userRequestedTier && !forcedTier && !explicitModel && config.history.learningEnabled) {
+    const candidates = (["fast", "balanced", "deep"] as ModelTier[]).map((tier) => {
+      const candidate = config[agent].models[tier];
+      const effort = candidate.effort ?? effortForTier(tier);
+      const key = `${agent}/${candidate.model}/${effort}`;
+      return {
+        tier,
+        utility: learned.routeUtilities[key] ?? 0,
+        samples: learned.routeSamples[key] ?? 0,
+      };
+    });
+    const minimumSamples = config.history.minimumSamples ?? 2;
+    const qualified = candidates.filter((candidate) => candidate.samples >= minimumSamples);
+    const bestLearned = qualified.sort((a, b) => b.utility - a.utility)[0];
+    const current = candidates.find((candidate) => candidate.tier === modelTier)!;
+    if (bestLearned && bestLearned.utility > current.utility + 0.2) {
+      modelTier = bestLearned.tier;
+      modelReasons.push(
+        `route outcomes favored ${bestLearned.tier} tier (utility ${bestLearned.utility.toFixed(2)}, effective samples ${bestLearned.samples.toFixed(1)})`,
+      );
+    } else if (
+      (config.history.explorationRate ?? 0) > 0 &&
+      Math.random() < (config.history.explorationRate ?? 0)
+    ) {
+      const exploratory = [...candidates].sort((a, b) => a.samples - b.samples)[0];
+      modelTier = exploratory.tier;
+      modelReasons.push(`controlled exploration selected under-observed ${exploratory.tier} tier`);
+    }
+  }
+
   const profile = config[agent].models[modelTier];
   const effort = forcedEffort ?? profile.effort ?? effortForTier(modelTier);
+  const routeKey = `${agent}/${explicitModel?.model ?? profile.model}/${effort}`;
   modelReasons.unshift(`complexity ${complexity}/5 → ${modelTier} tier`);
   if (userRequestedTier)
     modelReasons.unshift(`user explicitly requested the ${userRequestedTier} tier`);
@@ -370,5 +401,7 @@ export function routeTask(task: string, config: RouterConfig): RouteResult {
     reasons,
     modelReasons,
     matchedRule,
+    learningConfidence: learned.confidence,
+    expectedUtility: learned.routeUtilities[routeKey],
   };
 }

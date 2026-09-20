@@ -53,6 +53,23 @@ test("parses interactive preference commands", () => {
     rating: "good",
     note: "shipped",
   });
+  assert.deepEqual(parseInteractiveInput("/feedback phase abc bad retry"), {
+    kind: "feedback",
+    phaseId: "abc",
+    rating: "bad",
+    note: "retry",
+  });
+  assert.deepEqual(parseInteractiveInput("/learning"), { kind: "learning", action: "status" });
+  assert.deepEqual(parseInteractiveInput("/learning explain abc"), {
+    kind: "learning",
+    action: "explain",
+    targetId: "abc",
+  });
+  assert.deepEqual(parseInteractiveInput("/learning reset --yes"), {
+    kind: "learning",
+    action: "reset",
+    confirmed: true,
+  });
   assert.deepEqual(parseInteractiveInput("/clear"), { kind: "clear" });
   assert.deepEqual(parseInteractiveInput("/new named session"), {
     kind: "new",
@@ -73,6 +90,9 @@ test("returns guidance for invalid interactive commands", () => {
   assert.match(parseInteractiveInput("/agent other").kind, /error/);
   assert.match(parseInteractiveInput("/tier other").kind, /error/);
   assert.match(parseInteractiveInput("/log other").kind, /error/);
+  assert.match(parseInteractiveInput("/feedback phase abc maybe").kind, /error/);
+  assert.match(parseInteractiveInput("/feedback maybe").kind, /error/);
+  assert.match(parseInteractiveInput("/learning explain").kind, /error/);
   assert.match(parseInteractiveInput("/wat").kind, /error/);
 });
 

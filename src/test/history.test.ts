@@ -4,14 +4,24 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  appendFeedback,
   appendHistory,
+  explainLearning,
+  feedbackPath,
   historyPath,
   learningHints,
+  learningStatus,
   newHistoryId,
   newRunId,
+  readFeedback,
   readHistory,
+  recordImplicitCorrection,
+  resetLearning,
+  semanticSimilarity,
   setFeedback,
+  setScopedFeedback,
   similarity,
+  updateHistoryRecord,
 } from "../history.js";
 import type { HistoryConfig, HistoryRecord } from "../types.js";
 
@@ -146,6 +156,143 @@ test("rates every history record belonging to a run", () => {
       readHistory(config).map((record) => record.feedback),
       ["good", "good"],
     );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("stores scoped feedback and exposes inspectable learning state", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-scoped-feedback-"));
+  const config: HistoryConfig = {
+    enabled: true,
+    learningEnabled: true,
+    similarityThreshold: 0.2,
+    minimumSamples: 1,
+    path: path.join(dir, "history.jsonl"),
+  };
+  const base: HistoryRecord = {
+    id: "phase-1",
+    runId: "run-1",
+    timestamp: new Date().toISOString(),
+    cwd: "/repo",
+    task: "fix TypeScript parser bug",
+    phaseKind: "implement",
+    agent: "codex",
+    modelTier: "fast",
+    model: "model",
+    effort: "low",
+    complexity: 2,
+    exitCode: 0,
+    durationMs: 10,
+    outputExcerpt: "Tests passed with 0 failures",
+  };
+
+  try {
+    assert.match(feedbackPath(config), /history\.feedback\.jsonl$/);
+    assert.match(
+      feedbackPath({ ...config, path: path.join(dir, "history.data") }),
+      /\.feedback\.jsonl$/,
+    );
+    assert.deepEqual(readFeedback({ ...config, enabled: false }), []);
+    assert.deepEqual(readFeedback(config), []);
+    appendFeedback(
+      { ...config, enabled: false },
+      {
+        id: "ignored",
+        timestamp: base.timestamp,
+        scope: "run",
+        targetId: "run-1",
+        rating: "good",
+        source: "explicit",
+        confidence: 1,
+      },
+    );
+
+    appendHistory(config, base);
+    appendHistory(config, { ...base, id: "phase-2", phaseKind: "review", agent: "claude" });
+    const runFeedback = setScopedFeedback(config, "bad", { note: "needs work" });
+    const phaseFeedback = setScopedFeedback(config, "good", {
+      scope: "phase",
+      targetId: "phase-2",
+      source: "implicit",
+    });
+    assert.equal(runFeedback.targetId, "run-1");
+    assert.equal(phaseFeedback.confidence, 0.45);
+    assert.throws(
+      () => setScopedFeedback(config, "good", { scope: "phase", targetId: "missing" }),
+      /not found/,
+    );
+
+    fs.appendFileSync(feedbackPath(config), "not-json\n");
+    assert.equal(readFeedback(config).length, 2);
+    assert.equal(recordImplicitCorrection(config, undefined, "fix that"), undefined);
+    assert.equal(recordImplicitCorrection(config, "missing", "fix that"), undefined);
+    assert.equal(recordImplicitCorrection(config, "run-1", "looks good"), undefined);
+    assert.equal(recordImplicitCorrection(config, "run-1", "fix that"), undefined);
+
+    assert.equal(
+      updateHistoryRecord(config, "missing", (record) => record),
+      undefined,
+    );
+    assert.equal(
+      updateHistoryRecord(config, "phase-1", (record) => ({ ...record, durationMs: 20 }))
+        ?.durationMs,
+      20,
+    );
+    assert.ok(semanticSimilarity("fix TypeScript parser bug", readHistory(config)[0]) > 0.9);
+
+    const hints = learningHints("fix TypeScript parser bug", config);
+    assert.equal(hints.observations, 2);
+    assert.ok(hints.routeUtilities["codex/model/low"] < 0);
+
+    const status = learningStatus(config);
+    assert.equal(status.phases, 2);
+    assert.equal(status.explicitFeedback, 1);
+    assert.equal(status.implicitFeedback, 1);
+    assert.equal(status.evaluatedPhases, 2);
+    assert.equal(status.routes[0].samples, 1);
+
+    const explanation = explainLearning(config, "run-1");
+    assert.equal(explanation.records.length, 2);
+    assert.equal(explanation.feedback.length, 2);
+    assert.throws(() => explainLearning(config, "missing"), /not found/);
+
+    setFeedback(config, "good", "phase-1", "legacy");
+    assert.equal(resetLearning(config), 2);
+    assert.deepEqual(readFeedback(config), []);
+    assert.equal(readHistory(config)[0].feedback, undefined);
+    assert.equal(resetLearning(config), 0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("records a high-signal corrective follow-up as implicit feedback", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-implicit-feedback-"));
+  const config: HistoryConfig = {
+    enabled: true,
+    learningEnabled: true,
+    similarityThreshold: 0.2,
+    path: path.join(dir, "history.jsonl"),
+  };
+  try {
+    appendHistory(config, {
+      id: "phase",
+      runId: "run",
+      timestamp: new Date().toISOString(),
+      cwd: "/repo",
+      task: "repair parser",
+      agent: "gemini",
+      modelTier: "fast",
+      model: "model",
+      effort: "low",
+      complexity: 1,
+      exitCode: 0,
+      durationMs: 1,
+    });
+    const feedback = recordImplicitCorrection(config, "run", "that is wrong, try again");
+    assert.equal(feedback?.rating, "bad");
+    assert.equal(feedback?.source, "implicit");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
