@@ -29,6 +29,27 @@ test("runs a dry adaptive plan without invoking providers", async () => {
   assert.deepEqual(result.phases, []);
 });
 
+test("includes durable process guidance in adaptive phase prompts", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-orchestrate-process-"));
+  const promptLog = path.join(dir, "prompt");
+  const provider = executable(
+    path.join(dir, "provider"),
+    `require("node:fs").writeFileSync(${JSON.stringify(promptLog)}, process.argv.at(-1));
+console.log(JSON.stringify({type:"result", subtype:"success", result:"done"}));`,
+  );
+  try {
+    const config = testConfig(provider, provider);
+    config.orchestration.maxPhases = 1;
+    await orchestrate("Start the dev server and leave it running", config);
+
+    const prompt = fs.readFileSync(promptLog, "utf8");
+    assert.match(prompt, /tool-managed command session/);
+    assert.match(prompt, /tool session ID is not evidence/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("routes each follow-up from the current prompt instead of persisted session models", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-orchestrate-routing-"));
   const provider = executable(

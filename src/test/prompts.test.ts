@@ -39,3 +39,13 @@ test("marks inspection-style single requests as read-only", () => {
   assert.match(singleRunPrompt("Start the app"), /start it detached in the background/);
   assert.match(singleRunPrompt("Generate a cover"), /persist it in the project/);
 });
+
+test("does not mistake a tool command session for a persistent server", () => {
+  const prompt = singleRunPrompt("Start the dev server and leave it running");
+
+  assert.match(prompt, /tool-managed command session/);
+  assert.match(prompt, /durable detachment mechanism/);
+  assert.match(prompt, /separate tool call only after the launching shell has exited/);
+  assert.match(prompt, /tool session ID is not evidence/);
+  assert.match(prompt, /report that clearly instead of claiming the process is running/);
+});
