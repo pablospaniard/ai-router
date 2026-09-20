@@ -16,8 +16,23 @@ import fs from "node:fs";
 import { loadConfig, writeProjectConfig } from "./config.js";
 import { runSetup } from "./setup.js";
 import { printModels } from "./models.js";
-import { appendHistory, historyPath, newHistoryId, readHistory, setFeedback } from "./history.js";
-import { applyRouteOverrides, orchestrate, shouldOrchestrate } from "./orchestrator.js";
+import {
+  appendHistory,
+  explainLearning,
+  historyPath,
+  learningStatus,
+  newHistoryId,
+  readHistory,
+  resetLearning,
+  recordImplicitCorrection,
+  setScopedFeedback,
+} from "./history.js";
+import {
+  applyRouteOverrides,
+  applyRoutePreferences,
+  orchestrate,
+  shouldOrchestrate,
+} from "./orchestrator.js";
 import { agentForModel, routeTask, routingClarification } from "./router.js";
 import {
   addTokenUsage,
@@ -55,6 +70,7 @@ import { inspectAccounts } from "./account.js";
 import { buildUsageReport, nonCachedTokens, processedTokens } from "./usage.js";
 import { firstRunWelcome } from "./welcome.js";
 import pathModule from "node:path";
+import { evaluateRoute, extractTaskFeatures } from "./evaluation.js";
 
 function requireText(file: string): string {
   return fs.readFileSync(file, "utf8");
@@ -113,7 +129,10 @@ function help() {
     `  ${commandColor("airo usage [limit]")}                      ${ui.gray("show token use and measured savings")}`,
   );
   console.log(
-    `  ${commandColor("airo feedback good|bad ...")}              ${ui.gray("teach the router")}`,
+    `  ${commandColor("airo feedback good|bad ...")}              ${ui.gray("rate the latest run")}`,
+  );
+  console.log(
+    `  ${commandColor("airo learning status|explain|reset")}       ${ui.gray("inspect or reset adaptive routing")}`,
   );
   console.log("");
   console.log(ui.bold("Sessions"));
@@ -139,6 +158,8 @@ function help() {
 function parseArgs(argv: string[]) {
   let agent: "auto" | Agent = "auto";
   let tier: ModelTier | undefined;
+  let preferredAgent: Agent | undefined;
+  let preferredTier: ModelTier | undefined;
   let model: string | undefined;
   let effort: Effort | undefined;
   let dryRun = false,
@@ -153,6 +174,8 @@ function parseArgs(argv: string[]) {
     const arg = argv[i];
     if (arg === "--agent") agent = argv[++i] as any;
     else if (arg === "--tier") tier = argv[++i] as ModelTier;
+    else if (arg === "--prefer-agent") preferredAgent = argv[++i] as Agent;
+    else if (arg === "--prefer-tier") preferredTier = argv[++i] as ModelTier;
     else if (arg === "--model") model = argv[++i];
     else if (arg === "--effort") effort = argv[++i] as Effort;
     else if (arg === "--dry-run") dryRun = true;
@@ -176,6 +199,8 @@ function parseArgs(argv: string[]) {
   return {
     agent,
     tier,
+    preferredAgent,
+    preferredTier,
     model,
     effort,
     dryRun,
@@ -208,6 +233,38 @@ function showFeedbackOption(config: any, interactive: boolean): void {
   console.log(`${statusIcon("info")} ${ui.gray("optional feedback:")} ${commandColor(command)}`);
 }
 
+function printLearningStatus(config: any): void {
+  const status = learningStatus(config.history);
+  console.log(divider("Adaptive routing learning"));
+  console.log(
+    `${ui.bold("Evidence")} ${status.phases} phase(s) · ${status.evaluatedPhases} evaluated · ${status.explicitFeedback} explicit · ${status.implicitFeedback} implicit`,
+  );
+  if (!status.routes.length) {
+    console.log(`${statusIcon("info")} ${ui.gray("No routing observations yet.")}`);
+    return;
+  }
+  for (const route of status.routes.slice(0, 12))
+    console.log(
+      `${ui.cyan(route.route.padEnd(32))} ${ui.gray(`${route.samples} sample(s)`)} ${ui.bold(`${(route.averageQuality * 100).toFixed(0)}% quality`)}`,
+    );
+}
+
+function printLearningExplanation(config: any, targetId: string): void {
+  const explanation = explainLearning(config.history, targetId);
+  console.log(divider(`Learning evidence · ${targetId}`));
+  for (const record of explanation.records) {
+    const evaluation = record.evaluation;
+    console.log(
+      `${ui.bold(record.id)} ${agentColor(record.agent, record.agent)}/${ui.cyan(record.model)} ${ui.gray(record.phaseKind ?? "single")} ${evaluation ? ui.bold(`${(evaluation.quality * 100).toFixed(0)}% quality · ${(evaluation.confidence * 100).toFixed(0)}% confidence`) : ui.yellow("legacy/unevaluated")}`,
+    );
+    for (const signal of evaluation?.signals ?? []) console.log(`  ${ui.gray("·")} ${signal}`);
+  }
+  for (const feedback of explanation.feedback)
+    console.log(
+      `${statusIcon("info")} ${feedback.source} ${feedback.scope} feedback: ${feedback.rating}${feedback.note ? ` · ${feedback.note}` : ""}`,
+    );
+}
+
 function routeOverrides(args: ReturnType<typeof parseArgs>, config: any) {
   const inferredAgent = args.model ? agentForModel(args.model, config) : undefined;
   return {
@@ -216,6 +273,18 @@ function routeOverrides(args: ReturnType<typeof parseArgs>, config: any) {
     model: args.model,
     effort: args.effort,
   };
+}
+
+function routeWithPreferences(
+  route: ReturnType<typeof routeTask>,
+  args: ReturnType<typeof parseArgs>,
+  config: any,
+) {
+  return applyRoutePreferences(
+    route,
+    { agent: args.preferredAgent, tier: args.preferredTier },
+    config,
+  );
 }
 
 async function clarifyRouting(
@@ -250,7 +319,7 @@ async function singleRun(
   askUser: (question: string) => Promise<string> = askTerminal,
 ) {
   let routed = applyRouteOverrides(
-    routeTask(args.task, config),
+    routeWithPreferences(routeTask(args.task, config), args, config),
     routeOverrides(args, config),
     config,
   );
@@ -259,7 +328,7 @@ async function singleRun(
     runId: singleRunId,
     sessionId: session?.sessionId,
     level: args.logLevel ?? config.logging.level,
-    persist: config.logging.persist,
+    persist: config.logging.persist && !args.dryRun,
   });
   const logMeta = {
     phaseIndex: 1,
@@ -274,11 +343,23 @@ async function singleRun(
   if (path) console.log(`${statusIcon("info")} ${brand()} ${ui.gray("config")} ${ui.cyan(path)}`);
   if (args.explain || args.dryRun) {
     console.log(
-      `${statusIcon("info")} ${ui.bold("provider scores")} ${agentColor("claude", `Claude ${routed.claudeScore.toFixed(1)}`)} ${ui.gray("/")} ${agentColor("codex", `Codex ${routed.codexScore.toFixed(1)}`)}`,
+      `${statusIcon("info")} ${ui.bold("provider scores")} ${(
+        ["claude", "codex", "gemini", "copilot"] as Agent[]
+      )
+        .map((agent) =>
+          agentColor(agent, `${agent} ${(routed.agentScores?.[agent] ?? 0).toFixed(1)}`),
+        )
+        .join(ui.gray(" / "))}`,
     );
     for (const r of routed.reasons)
       console.log(
         `  ${agentColor(r.agent, r.agent === "claude" ? "C" : "X")} ${ui.yellow(`${r.points >= 0 ? "+" : ""}${r.points.toFixed(1)}`)} ${ui.gray("·")} ${r.reason}`,
+      );
+    for (const reason of routed.modelReasons)
+      console.log(`  ${ui.cyan("M")} ${ui.gray("·")} ${reason}`);
+    if (routed.learningConfidence !== undefined)
+      console.log(
+        `  ${ui.magenta("L")} ${ui.gray("·")} learning confidence ${(routed.learningConfidence * 100).toFixed(0)}%${routed.expectedUtility === undefined ? "" : ` · expected utility ${routed.expectedUtility.toFixed(2)}`}`,
       );
   }
   if (args.dryRun)
@@ -342,6 +423,11 @@ async function singleRun(
   logger.phaseEnd(logMeta, result.exitCode, durationMs);
   logger.finalOutput(result.output);
   if (logger.persist) logger.status(`logs: ${logger.runDir}`);
+  const assessment = evaluateRoute(result.output, result.exitCode, undefined, {
+    retries: clarificationCount,
+    durationMs,
+    usage,
+  });
   appendHistory(config.history, {
     id: newHistoryId(),
     runId: singleRunId,
@@ -360,6 +446,8 @@ async function singleRun(
     durationMs,
     outputExcerpt: result.output.slice(-config.orchestration.outputTailChars),
     usage,
+    taskFeatures: extractTaskFeatures(args.task, routed.complexity),
+    ...assessment,
   });
   return {
     exitCode: result.exitCode,
@@ -376,6 +464,8 @@ async function execute(
   path?: string,
   askUser: (question: string) => Promise<string> = askTerminal,
 ) {
+  if (!args.dryRun)
+    recordImplicitCorrection(config.history, session?.turns.at(-1)?.runId, args.task);
   args = await clarifyRouting(args, config, askUser);
   const adaptive = args.adaptive || (!args.single && shouldOrchestrate(args.task, config));
   if (adaptive) {
@@ -385,6 +475,7 @@ async function execute(
       session,
       logLevel: args.logLevel,
       askUser,
+      routePreferences: { agent: args.preferredAgent, tier: args.preferredTier },
       routeOverrides: routeOverrides(args, config),
     });
     if (session && !args.dryRun)
@@ -479,7 +570,9 @@ function interactiveHelp(): string {
       `${commandColor("/usage [limit]")}      ${ui.gray("show token usage")}`,
       `${commandColor("/logs")}               ${ui.gray("show recent run logs")}`,
       `${commandColor("/attach <file-path>")} ${ui.gray("attach a local image, PDF, Markdown, or JSON file to the next task")}`,
-      `${commandColor("/feedback good|bad [note]")} ${ui.gray("save feedback for the latest run")}`,
+      `${commandColor("/feedback good|bad [note]")} ${ui.gray("rate the latest run")}`,
+      `${commandColor("/feedback phase <id> good|bad [note]")} ${ui.gray("rate one phase")}`,
+      `${commandColor("/learning status|explain <id>")} ${ui.gray("inspect learned routing")}`,
       `${commandColor("/sessions")}           ${ui.gray("list repository sessions")}`,
       `${commandColor("/clear")}              ${ui.gray("clear the screen")}`,
       `${commandColor("/exit")}               ${ui.gray("exit interactive mode")}`,
@@ -604,10 +697,27 @@ async function chatLoop(config: any, path?: string) {
         continue;
       }
       if (action.kind === "feedback") {
-        const updated = setFeedback(config.history, action.rating, undefined, action.note);
+        const updated = setScopedFeedback(config.history, action.rating, {
+          scope: action.phaseId ? "phase" : "run",
+          targetId: action.phaseId,
+          note: action.note,
+        });
         console.log(
-          `${statusIcon("ok")} ${ui.gray("feedback saved for")} ${ui.bold(String(updated.length))} ${ui.gray("item(s)")}`,
+          `${statusIcon("ok")} ${ui.gray("feedback saved for")} ${ui.bold(updated.scope)} ${ui.cyan(updated.targetId)}`,
         );
+        continue;
+      }
+      if (action.kind === "learning") {
+        if (action.action === "status") printLearningStatus(config);
+        else if (action.action === "explain") printLearningExplanation(config, action.targetId!);
+        else if (!action.confirmed)
+          console.log(
+            `${statusIcon("info")} ${ui.yellow("Use /learning reset --yes to remove learned feedback.")}`,
+          );
+        else
+          console.log(
+            `${statusIcon("ok")} ${ui.gray("removed")} ${ui.bold(String(resetLearning(config.history)))} ${ui.gray("feedback record(s)")}`,
+          );
         continue;
       }
       if (action.kind === "sessions") {
@@ -811,17 +921,33 @@ async function main() {
     return;
   }
   if (raw[0] === "feedback") {
-    const rating = raw[1] as FeedbackRating;
+    const phase = raw[1] === "phase";
+    const targetId = phase ? raw[2] : undefined;
+    const rating = raw[phase ? 3 : 1] as FeedbackRating;
     if (!["good", "bad"].includes(rating)) throw new Error("Use: airo feedback good|bad [note]");
-    const updated = setFeedback(
-      config.history,
-      rating,
-      undefined,
-      raw.slice(2).join(" ") || undefined,
-    );
+    const updated = setScopedFeedback(config.history, rating, {
+      scope: phase ? "phase" : "run",
+      targetId,
+      note: raw.slice(phase ? 4 : 2).join(" ") || undefined,
+    });
     console.log(
-      `${statusIcon("ok")} ${brand()} ${ui.gray("feedback=")}${rating === "good" ? ui.green(rating) : ui.red(rating)} ${ui.gray("saved for")} ${ui.bold(String(updated.length))} ${ui.gray("item(s)")}`,
+      `${statusIcon("ok")} ${brand()} ${ui.gray("feedback=")}${rating === "good" ? ui.green(rating) : ui.red(rating)} ${ui.gray("saved for")} ${ui.bold(updated.scope)} ${ui.cyan(updated.targetId)}`,
     );
+    return;
+  }
+  if (raw[0] === "learning") {
+    const action = raw[1] ?? "status";
+    if (action === "status") printLearningStatus(config);
+    else if (action === "explain" && raw[2]) printLearningExplanation(config, raw[2]);
+    else if (action === "reset") {
+      if (!raw.includes("--yes"))
+        throw new Error(
+          "Learning reset removes all feedback. Re-run with: airo learning reset --yes",
+        );
+      console.log(
+        `${statusIcon("ok")} ${ui.gray("removed")} ${ui.bold(String(resetLearning(config.history)))} ${ui.gray("feedback record(s); routing history was preserved")}`,
+      );
+    } else throw new Error("Use: airo learning status|explain <run-or-phase-id>|reset --yes");
     return;
   }
   if (raw[0] === "config" && raw[1] === "init") {
@@ -942,11 +1068,11 @@ async function main() {
   let session: SessionState | undefined;
   if (args.sessionId) {
     session = loadSession(args.sessionId);
-    setActiveSession(process.cwd(), session.sessionId);
+    if (!args.dryRun) setActiveSession(process.cwd(), session.sessionId);
   } else if (args.continueMode) {
     session = getActiveSession();
     if (!session) throw new Error('No active session. Start with: airo session new "task"');
-  } else session = createSession(args.task);
+  } else if (!args.dryRun) session = createSession(args.task);
   process.exitCode = await execute(args, session, config, path);
 }
 

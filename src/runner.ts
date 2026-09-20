@@ -53,6 +53,9 @@ function argsForRoute(
       if (config.permissions.networkAccess)
         args.push("-c", "sandbox_workspace_write.network_access=true");
     }
+    // AIRO owns the approval UI and retries an approved action with an elevated
+    // sandbox. The headless child has no interactive stdin for nested prompts.
+    args.push("--ask-for-approval", "never");
     if (headless) args.push("exec");
     if (structuredProgress && headless) args.push("--json");
     args.push("--model", route.model);
@@ -304,13 +307,20 @@ export function extractQuestion(text: string): string | undefined {
  */
 export function permissionFailureQuestion(text: string): string | undefined {
   const failure =
-    /\b(?:permission denied|operation not permitted|access denied|approval (?:is )?required|requires? (?:user )?approval|blocked by (?:the )?sandbox|sandbox (?:denied|blocked|restriction)|network access (?:is )?(?:disabled|denied|blocked|restricted))\b/i;
+    /\b(?:permission denied|operation not permitted|access denied|approval (?:is )?required|requires? (?:user )?approval|blocked by (?:the )?sandbox|sandbox (?:denied|blocked|restriction)|(?:network|internet|github(?: api)?|api) access (?:is )?(?:disabled|denied|blocked|restricted|unavailable))\b/i;
   const connectionFailure =
     /\b(?:could(?:n't| not)|cannot|can't|unable to|failed to)\b.{0,160}\b(?:access|connect|fetch|reach|retrieve)\b.{0,160}\b(?:connection error|failed to connect|network is unreachable|could not resolve host|name resolution)\b/i;
   const reversedConnectionFailure =
     /\b(?:connection error|failed to connect|network is unreachable|could not resolve host|name resolution)\b.{0,160}\b(?:could(?:n't| not)|cannot|can't|unable to|failed)\b/i;
+  const githubConnectionFailure =
+    /\b(?:cannot|can't|unable to|failed to)\s+connect\s+to\s+(?:api\.)?github\.com\b/i;
 
-  if (!failure.test(text) && !connectionFailure.test(text) && !reversedConnectionFailure.test(text))
+  if (
+    !failure.test(text) &&
+    !connectionFailure.test(text) &&
+    !reversedConnectionFailure.test(text) &&
+    !githubConnectionFailure.test(text)
+  )
     return undefined;
 
   const action = /\b(?:github|gh\s+(?:api|pr|issue|repo|run))\b/i.test(text)
@@ -530,7 +540,11 @@ export async function runAgent(
   const output =
     `${(finalOutput || candidateOutput || fallbackOutput).trim()}${exitCode !== 0 && stderrOutput.trim() ? `\n${stderrOutput.trim()}` : ""}`.trim();
   if (!question) question = extractQuestion(output);
-  if (!question && config.permissions.mode === "prompt" && !options.elevated)
-    question = permissionFailureQuestion(output);
+  if (config.permissions.mode === "prompt" && !options.elevated) {
+    // Prefer the normalized permission prompt even when the provider phrased
+    // the denial as a question. Clients can then render Approve/Decline rather
+    // than a generic Reply action, and approval triggers the elevated retry.
+    question = permissionFailureQuestion(output) ?? question;
+  }
   return { exitCode, output, question, usage };
 }

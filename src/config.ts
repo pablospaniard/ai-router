@@ -47,7 +47,15 @@ export const DEFAULT_CONFIG: RouterConfig = {
     },
   },
   permissions: { mode: "prompt", networkAccess: true },
-  history: { enabled: true, learningEnabled: true, similarityThreshold: 0.25 },
+  history: {
+    enabled: true,
+    learningEnabled: true,
+    similarityThreshold: 0.25,
+    minimumSamples: 2,
+    halfLifeDays: 90,
+    explorationRate: 0,
+    repositoryScoped: true,
+  },
   logging: { level: "live", persist: true },
   orchestration: {
     mode: "auto",

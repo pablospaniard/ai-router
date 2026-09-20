@@ -261,6 +261,7 @@ Teach the router from a completed run:
 ```bash
 airo feedback good
 airo feedback bad "used more reasoning than necessary"
+airo feedback phase <phase-id> good "implementation was correct"
 ```
 
 After a completed run, AIRO continues straight to the next prompt and shows an optional feedback command:
@@ -269,7 +270,37 @@ After a completed run, AIRO continues straight to the next prompt and shows an o
 ⓘ optional feedback: /feedback good  |  /feedback bad
 ```
 
-Use `good` to record positive feedback or `bad` to record negative feedback. Disable `history.learningEnabled` to turn off feedback-based routing adjustments.
+Use `good` to record positive feedback or `bad` to record negative feedback. Run-level feedback is stored separately from phase history and receives phase-aware credit; a phase rating takes precedence over a run rating. AIRO also records low-confidence negative feedback for clear corrective follow-ups such as “fix that” or “try again.” Silence is never treated as approval.
+
+Inspect or reset the evidence used by adaptive routing:
+
+```bash
+airo learning status
+airo learning explain <run-or-phase-id>
+airo learning reset --yes
+```
+
+For every new phase, AIRO stores task features, a local hashed feature embedding, route/model/effort, latency and token telemetry, and a deterministic evaluation. Successful provider exit, reported verification, missing verification, retries, recovery, and later regression-review findings contribute with different confidence levels. Explicit feedback remains the strongest signal. AIRO does not train provider models or let a producing model award itself an unverified success.
+
+The router combines these outcomes with its normal request signals. Similar observations are time-decayed, model/provider/tier performance is tracked separately, cost and latency reduce route utility, and learned tier changes require a minimum amount of effective evidence. Learning is repository-scoped by default. Controlled exploration is available but disabled by default.
+
+Configure the behavior under `history`:
+
+```json
+{
+  "history": {
+    "enabled": true,
+    "learningEnabled": true,
+    "similarityThreshold": 0.25,
+    "minimumSamples": 2,
+    "halfLifeDays": 90,
+    "explorationRate": 0,
+    "repositoryScoped": true
+  }
+}
+```
+
+Set `learningEnabled` to `false` to retain history without using it for routing. Set `explorationRate` to a small value such as `0.02` only if occasional routing experiments are acceptable.
 
 Each persisted run stores its combined log, individual phase logs, structured event streams, and a clean `final-output.txt` containing only the provider's terminal response. Set `logging.persist` to `false` to keep the terminal stream without writing run files.
 

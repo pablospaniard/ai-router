@@ -47,7 +47,11 @@
   "history": {
     "enabled": true,
     "learningEnabled": true,
-    "similarityThreshold": 0.25
+    "similarityThreshold": 0.25,
+    "minimumSamples": 2,
+    "halfLifeDays": 90,
+    "explorationRate": 0,
+    "repositoryScoped": true
   },
   "orchestration": {
     "mode": "auto",

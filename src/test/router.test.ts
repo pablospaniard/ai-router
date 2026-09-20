@@ -6,6 +6,7 @@ import test from "node:test";
 import { DEFAULT_CONFIG } from "../config.js";
 import { appendHistory } from "../history.js";
 import {
+  applyRoutePreferences,
   applyRouteOverrides,
   applyPhasePreference,
   needsRecovery,
@@ -101,6 +102,34 @@ test("understands human-style provider, model, and tier overrides", () => {
   assert.equal(codex.model, current.codex.models.deep.model);
 });
 
+test("lets an on-demand model request override persistent routing preferences", () => {
+  const current = config();
+  const route = applyRoutePreferences(
+    routeTask("use codex 5.6 terra", current),
+    { agent: "codex", tier: "fast" },
+    current,
+  );
+
+  assert.equal(route.agent, "codex");
+  assert.equal(route.modelTier, "balanced");
+  assert.equal(route.model, "gpt-5.6-terra");
+  assert.equal(route.userRequestedTier, "balanced");
+});
+
+test("applies persistent preferences after automatic phase choices", () => {
+  const current = config();
+  const task = "review this pull request";
+  const route = applyRoutePreferences(
+    applyPhasePreference(routeTask(task, current), planPhases(task, current)[0], current),
+    { agent: "codex", tier: "fast" },
+    current,
+  );
+
+  assert.equal(route.agent, "codex");
+  assert.equal(route.modelTier, "fast");
+  assert.equal(route.model, current.codex.models.fast.model);
+});
+
 test("uses the newest routing instruction and ignores stale session choices", () => {
   const current = config();
   const request = userRoutingRequest(
@@ -116,9 +145,22 @@ test("uses the newest routing instruction and ignores stale session choices", ()
 test("asks for clarification when a routing instruction cannot be resolved", () => {
   const current = config();
   assert.match(routingClarification("use the banana model for this", current) ?? "", /banana/);
+  assert.match(
+    routingClarification("use the banana model. Then explain the error", current) ?? "",
+    /banana/,
+  );
   assert.match(routingClarification("switch to Grok", current) ?? "", /Grok/i);
   assert.equal(routingClarification("switch to the main branch", current), undefined);
   assert.equal(routingClarification("use automatic routing for this review", current), undefined);
+});
+
+test("does not let a later sentence change the routing request", () => {
+  const current = config();
+  const request = userRoutingRequest("use Claude. Then make the implementation fast", current);
+
+  assert.equal(request.agent, "claude");
+  assert.equal(request.tier, undefined);
+  assert.equal(request.model, undefined);
 });
 
 test("preserves human provider overrides through phase preferences", () => {
@@ -189,7 +231,9 @@ test("ignores malformed custom rule expressions", () => {
 
 test("uses the configured default agent to break score ties", () => {
   const neutralTask = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu";
-  const route = routeTask(neutralTask, config({ defaultAgent: "claude" }));
+  const current = config({ defaultAgent: "claude" });
+  current.history.learningEnabled = false;
+  const route = routeTask(neutralTask, current);
 
   assert.equal(route.agent, "claude");
 });
@@ -200,10 +244,11 @@ test("routes with learned feedback for Gemini and Copilot", () => {
     for (const agent of ["gemini", "copilot"] as const) {
       const current = config();
       current.history.path = path.join(dir, `${agent}.jsonl`);
+      current.history.minimumSamples = 0.9;
       appendHistory(current.history, {
         id: agent,
-        timestamp: "2026-01-01T00:00:00.000Z",
-        cwd: "/repo",
+        timestamp: "2099-01-01T00:00:00.000Z",
+        cwd: process.cwd(),
         task: `repair ${agent} parser`,
         agent,
         modelTier: "fast",

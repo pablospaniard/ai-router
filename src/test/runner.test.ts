@@ -61,6 +61,18 @@ test("turns concrete permission and connection failures into approval questions"
     "Permission required to access GitHub and retry the blocked action. Approve?",
   );
   assert.equal(
+    permissionFailureQuestion(
+      "GitHub authentication cannot connect to github.com. Please authenticate manually.",
+    ),
+    "Permission required to access GitHub and retry the blocked action. Approve?",
+  );
+  assert.equal(
+    permissionFailureQuestion(
+      "GitHub API access is blocked, so I can't open the PR. Please enable network access.",
+    ),
+    "Permission required to access GitHub and retry the blocked action. Approve?",
+  );
+  assert.equal(
     permissionFailureQuestion("The review completed. Permission handling looks correct."),
     undefined,
   );
@@ -569,6 +581,7 @@ process.stdout.write(JSON.stringify({type:"item.completed", item:{type:"agent_me
     const regular = await runAgent(route, "prompt", config, { headless: true, capture: true });
     assert.match(regular.output, /--sandbox workspace-write/);
     assert.match(regular.output, /sandbox_workspace_write\.network_access=true/);
+    assert.match(regular.output, /--ask-for-approval never/);
 
     const elevated = await runAgent(route, "prompt", config, {
       headless: true,
@@ -576,6 +589,7 @@ process.stdout.write(JSON.stringify({type:"item.completed", item:{type:"agent_me
       elevated: true,
     });
     assert.match(elevated.output, /--sandbox danger-full-access/);
+    assert.match(elevated.output, /--ask-for-approval never/);
     assert.doesNotMatch(elevated.output, /sandbox_workspace_write\.network_access=true/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -635,7 +649,7 @@ test("only synthesizes a permission question when another access level is availa
   fs.writeFileSync(
     command,
     `#!/usr/bin/env node
-process.stdout.write(JSON.stringify({type:"item.completed", item:{type:"agent_message", text:"Unable to access the API because network access is blocked."}}) + "\\n");
+process.stdout.write(JSON.stringify({type:"item.completed", item:{type:"agent_message", text:"AIROUTE_QUESTION: GitHub API access is blocked, so I can't open the PR. Please enable network access."}}) + "\\n");
 `,
   );
   fs.chmodSync(command, 0o755);
@@ -648,7 +662,7 @@ process.stdout.write(JSON.stringify({type:"item.completed", item:{type:"agent_me
     const regular = await runAgent(route, "prompt", config, { headless: true, capture: true });
     assert.equal(
       regular.question,
-      "Permission required to retry the blocked network action. Approve?",
+      "Permission required to access GitHub and retry the blocked action. Approve?",
     );
 
     const elevated = await runAgent(route, "prompt", config, {

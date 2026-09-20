@@ -37,6 +37,59 @@ export interface HistoryConfig {
   learningEnabled: boolean;
   path?: string;
   similarityThreshold: number;
+  /** Minimum effective observations before learned routing may override the heuristic route. */
+  minimumSamples?: number;
+  /** Half-life used to reduce the influence of stale observations. */
+  halfLifeDays?: number;
+  /** Fraction of routing decisions that may explore an uncertain route. Zero disables exploration. */
+  explorationRate?: number;
+  /** Keep learned evidence isolated to the current repository. */
+  repositoryScoped?: boolean;
+}
+
+export type TaskCategory = "debug" | "implement" | "review" | "research" | "test" | "general";
+
+export interface TaskFeatures {
+  category: TaskCategory;
+  language?: string;
+  risk: "low" | "medium" | "high";
+  complexity: number;
+  tokens: string[];
+  /** Locally generated feature embedding; no task text leaves the machine. */
+  embedding: number[];
+}
+
+export interface RouteEvaluation {
+  taskSatisfied: boolean;
+  verified: boolean;
+  quality: number;
+  confidence: number;
+  signals: string[];
+}
+
+export interface RouteOutcome {
+  completion: number;
+  verification: number;
+  retries: number;
+  recoveries: number;
+  regressions: number;
+  durationMs: number;
+  tokens?: number;
+  confidence: number;
+}
+
+export type FeedbackScope = "run" | "phase";
+export type FeedbackSource = "explicit" | "implicit";
+
+export interface FeedbackRecord {
+  id: string;
+  timestamp: string;
+  scope: FeedbackScope;
+  targetId: string;
+  rating: FeedbackRating;
+  source: FeedbackSource;
+  note?: string;
+  confidence: number;
 }
 
 export interface LoggingConfig {
@@ -89,9 +142,12 @@ export interface RouteResult {
   complexity: number;
   claudeScore: number;
   codexScore: number;
+  agentScores?: Record<Agent, number>;
   reasons: ScoreReason[];
   modelReasons: string[];
   matchedRule?: string;
+  learningConfidence?: number;
+  expectedUtility?: number;
 }
 
 export interface HistoryRecord {
@@ -116,6 +172,9 @@ export interface HistoryRecord {
   usage?: TokenUsage;
   feedback?: FeedbackRating;
   feedbackNote?: string;
+  taskFeatures?: TaskFeatures;
+  evaluation?: RouteEvaluation;
+  outcome?: RouteOutcome;
 }
 
 export interface PhasePlan {

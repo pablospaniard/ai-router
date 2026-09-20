@@ -1,4 +1,4 @@
-import { appendHistory, newHistoryId, newRunId } from "./history.js";
+import { appendHistory, newHistoryId, newRunId, updateHistoryRecord } from "./history.js";
 import { routeTask } from "./router.js";
 import {
   addTokenUsage,
@@ -22,6 +22,7 @@ import { compactSessionContext } from "./session.js";
 import { RunLogger } from "./logging.js";
 import { agentColor, brand, statusIcon, tierColor, ui } from "./ui.js";
 import type { LogLevel } from "./types.js";
+import { evaluateRoute, extractTaskFeatures } from "./evaluation.js";
 
 const CRITICAL =
   /\b(critical|production|prod|sev[ -]?[01]|p[ -]?0|outage|crash|data loss|security|vulnerability|deadlock|race condition)\b/i;
@@ -179,6 +180,17 @@ export interface RouteOverrides {
   effort?: Effort;
 }
 
+/** Apply persistent UI preferences as defaults while preserving choices in the current prompt. */
+export function applyRoutePreferences(
+  base: RouteResult,
+  preferences: Pick<RouteOverrides, "agent" | "tier">,
+  config: RouterConfig,
+): RouteResult {
+  const agent = base.userRequestedAgent || base.userRequestedModel ? undefined : preferences.agent;
+  const tier = base.userRequestedTier || base.userRequestedModel ? undefined : preferences.tier;
+  return applyRouteOverrides(base, { agent, tier }, config);
+}
+
 export function applyRouteOverrides(
   base: RouteResult,
   overrides: RouteOverrides,
@@ -236,6 +248,7 @@ export async function orchestrate(
     session?: SessionState;
     logLevel?: LogLevel;
     askUser?: (question: string) => Promise<string>;
+    routePreferences?: Pick<RouteOverrides, "agent" | "tier">;
     routeOverrides?: RouteOverrides;
   } = {},
 ): Promise<{ runId: string; phases: PhaseExecution[]; exitCode: number }> {
@@ -247,7 +260,7 @@ export async function orchestrate(
     runId,
     sessionId: options.session?.sessionId,
     level: options.logLevel ?? config.logging.level,
-    persist: config.logging.persist,
+    persist: config.logging.persist && !options.dryRun,
   });
   let plans = planPhases(task, config);
   const executions: PhaseExecution[] = [];
@@ -258,11 +271,21 @@ export async function orchestrate(
     );
     for (let i = 0; i < plans.length; i++) {
       const p = plans[i];
-      let route = applyPhasePreference(routeTask(task, config), p, config);
+      let route = applyRoutePreferences(
+        applyPhasePreference(routeTask(task, config), p, config),
+        options.routePreferences ?? {},
+        config,
+      );
       route = applyRouteOverrides(route, options.routeOverrides ?? {}, config);
       console.log(
         `  ${ui.gray(String(i + 1).padStart(2) + ".")} ${ui.bold(p.kind.padEnd(9))} ${ui.cyan("→")} ${agentColor(route.agent, route.agent)}${ui.gray("/")}${ui.cyan(route.model)} ${ui.gray("effort=")}${ui.magenta(route.effort)} ${ui.gray("tier=")}${tierColor(route.modelTier)} ${ui.gray("—")} ${p.title}`,
       );
+      if (options.explain) {
+        for (const reason of route.modelReasons) console.log(`     ${ui.gray("·")} ${reason}`);
+        console.log(
+          `     ${ui.gray("·")} learning confidence ${((route.learningConfidence ?? 0) * 100).toFixed(0)}%${route.expectedUtility === undefined ? "" : ` · expected utility ${route.expectedUtility.toFixed(2)}`}`,
+        );
+      }
     }
     return { runId, phases: [], exitCode: 0 };
   }
@@ -273,7 +296,11 @@ export async function orchestrate(
   for (let i = 0; i < plans.length && i < config.orchestration.maxPhases; i++) {
     const p = plans[i];
     const prompt = phaseTask(routedTask, p, executions);
-    let route = applyPhasePreference(routeTask(task, config), p, config);
+    let route = applyRoutePreferences(
+      applyPhasePreference(routeTask(task, config), p, config),
+      options.routePreferences ?? {},
+      config,
+    );
     route = applyRouteOverrides(route, options.routeOverrides ?? {}, config);
     route = fallbackIfMissing(route, config);
 
@@ -346,6 +373,12 @@ export async function orchestrate(
 
     const recordId = newHistoryId();
     execution.historyId = recordId;
+    const assessment = evaluateRoute(result.output, result.exitCode, p.kind, {
+      retries: clarificationCount,
+      recoveries: p.kind === "recover" ? 1 : 0,
+      durationMs: execution.durationMs,
+      usage,
+    });
     appendHistory(config.history, {
       id: recordId,
       runId,
@@ -366,7 +399,34 @@ export async function orchestrate(
       durationMs: execution.durationMs,
       outputExcerpt: tail(result.output, config.orchestration.outputTailChars),
       usage,
+      taskFeatures: extractTaskFeatures(task, route.complexity),
+      ...assessment,
     });
+
+    // A later independent review can supply delayed evidence about the implementation route.
+    if (p.kind === "review" && assessment.outcome.regressions > 0) {
+      const implementation = [...executions]
+        .reverse()
+        .find((candidate) => candidate.phase.kind === "implement" && candidate.historyId);
+      if (implementation?.historyId)
+        updateHistoryRecord(config.history, implementation.historyId, (record) => ({
+          ...record,
+          evaluation: record.evaluation
+            ? {
+                ...record.evaluation,
+                taskSatisfied: false,
+                quality: Math.max(0, record.evaluation.quality - 0.3),
+                signals: [
+                  ...record.evaluation.signals,
+                  "later review reported a possible regression",
+                ],
+              }
+            : record.evaluation,
+          outcome: record.outcome
+            ? { ...record.outcome, regressions: record.outcome.regressions + 1 }
+            : record.outcome,
+        }));
+    }
 
     if (
       needsRecovery(execution) &&
