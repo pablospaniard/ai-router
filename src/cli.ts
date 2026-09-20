@@ -844,11 +844,25 @@ async function main() {
     return;
   }
   if (raw[0] === "sessions") {
+    const json = raw.includes("--json");
     const limitIndex = raw.findIndex((arg: string) => arg === "--limit");
     const requestedLimit = limitIndex >= 0 ? Number(raw[limitIndex + 1]) : undefined;
     const limit =
       Number.isInteger(requestedLimit) && requestedLimit! > 0 ? requestedLimit : undefined;
     const list = listSessions().slice(0, limit);
+    if (json) {
+      console.log(
+        JSON.stringify(
+          list.map((s) => ({
+            sessionId: s.sessionId,
+            description: s.originalTask.replace(/\s+/g, " ").trim().slice(0, 160),
+            updatedAt: s.updatedAt,
+            turnCount: s.turns.length,
+          })),
+        ),
+      );
+      return;
+    }
     if (!list.length) console.log(`${statusIcon("info")} ${ui.gray("No sessions for this repo.")}`);
     for (const s of list)
       console.log(
@@ -857,6 +871,7 @@ async function main() {
     return;
   }
   if (raw[0] === "session") {
+    const json = raw.includes("--json");
     if (raw[1] === "clear") {
       clearActiveSession();
       console.log(`${statusIcon("ok")} ${ui.green("Cleared active session for this repo.")}`);
@@ -875,6 +890,21 @@ async function main() {
       return;
     }
     const s = getActiveSession();
+    if (json) {
+      console.log(
+        JSON.stringify(
+          s
+            ? {
+                sessionId: s.sessionId,
+                description: s.originalTask.replace(/\s+/g, " ").trim().slice(0, 160),
+                updatedAt: s.updatedAt,
+                turnCount: s.turns.length,
+              }
+            : null,
+        ),
+      );
+      return;
+    }
     console.log(
       s
         ? `${divider("Active session")}\n${ui.cyan(JSON.stringify(s, null, 2))}`

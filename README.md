@@ -32,6 +32,18 @@ request → route → analyze → implement → test → review
 - Persists phase logs, final output, routing history, and user feedback locally.
 - Inserts a recovery phase when a workflow fails or reports an unresolved problem.
 
+<p align="center">
+  <img src="docs/airo-features.png" alt="AIRO routes a task through adaptive phases, parallel chats, VS Code, and token-aware routing" width="960">
+</p>
+
+### Built for the way agent work actually happens
+
+- **Seamless local integration.** Keep using the Claude Code and Codex CLI accounts you already have. AIRO runs in your repository, keeps the shared working tree, and needs no proxy, copied API keys, or separate hosted workspace.
+- **Adaptive multi-model workflows.** AIRO can assign a different provider, model tier, and effort level to analysis, implementation, validation, and review—then add a recovery phase only when the evidence calls for it.
+- **Measured token efficiency.** Fast or balanced models handle routine work while deep models are reserved for difficult phases. `airo usage` reports provider telemetry and a clearly labeled historical estimate against comparable default-model runs.
+- **Sessions that survive context switches.** Continue a logical task even when the provider changes, restore past sessions, and keep concise task outcomes rather than exposing hidden reasoning.
+- **A real VS Code workspace.** The included extension provides a sidebar chat, rich phase indicators, attachments, session history, and parallel editor chats. Open a new chat without stopping an active one; the history view marks running chats so you can jump back to them.
+
 ## Get started
 
 1. Install Node.js 22 or newer, then install and sign in to Claude Code, Codex CLI, or both. AIRO uses those existing CLI logins—there are no AIRO API keys to create. The provider CLIs must be installed; AIRO invokes them as subprocesses and does not embed either provider.
@@ -56,7 +68,7 @@ request → route → analyze → implement → test → review
 
 ### VS Code sidebar (preview)
 
-The repository includes a VS Code extension in [`vscode-extension`](vscode-extension). Run `pnpm install` from the repository root, open the extension folder in VS Code, then press `F5` to launch an Extension Development Host. Its secondary-sidebar view is a stateful AIRO chat: send follow-ups in the active repository session, attach supported local files, start chats, and use visual controls for models, accounts, usage, logs, diagnostics, and feedback. Configure the executable, routing mode, provider, tier, and output detail under VS Code’s **AIRO** extension settings.
+The repository includes a VS Code extension in [`vscode-extension`](vscode-extension). Run `pnpm install` from the repository root, open the extension folder in VS Code, then press `F5` to launch an Extension Development Host. Its secondary-sidebar view is a stateful AIRO chat with visual workflow phases, provider-colored activity, attachments, and controls for models, accounts, usage, logs, diagnostics, and feedback. Use **New chat** to open an independent editor chat while another one runs; use **Previous chats** to restore or switch to saved chats, with active work clearly marked. Configure the executable, routing mode, provider, tier, and output detail under VS Code’s **AIRO** extension settings.
 
 The extension invokes the AIRO CLI, so `airo-cli` must be installed (or the repository must be linked locally) in addition to any provider CLI. Provider CLIs do not need to be installed in a standard location, but every executable must be reachable either through `PATH` or an explicit command path. If VS Code cannot find `airo`, set **AIRO: Command** to the absolute path of the AIRO executable, such as `/Users/me/.local/bin/airo` or `/opt/homebrew/bin/airo`. The same setting is used by the sidebar and the **AIRO: Open Terminal** command.
 
@@ -90,6 +102,12 @@ Force one agent or an adaptive workflow:
 airo --single "rename this interface"
 airo --adaptive "investigate and fix this intermittent failure"
 ```
+
+### Workflow modes: automatic, adaptive, or single
+
+`auto` is the default: AIRO reads the request and uses a multi-phase workflow for work that looks broad, risky, complex, review-oriented, or long; it keeps a simple request in one focused run. Choose `adaptive` to always plan phases, or `single` when you want one routed agent to own the task (see the `--single`/`--adaptive` examples above).
+
+In an adaptive run, AIRO plans only the phases the task needs—typically **Analyze → Implement → Validate → Review**. Each phase is routed independently: for example, a balanced analysis can hand off to a deep implementation, followed by fast validation and an independent regression review. Preferences in a project’s `orchestration` configuration, explicit `--agent`/`--tier`/`--model` flags, and availability constraints are all respected. The VS Code **AIRO: Mode** setting exposes the same choices and displays the live phase and model route in the chat.
 
 Preview the decision without running an agent:
 

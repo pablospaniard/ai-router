@@ -1,10 +1,16 @@
 import * as vscode from "vscode";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import path from "node:path";
-import { renderWebview } from "./webview";
+import { renderHistoryWebview, renderWebview } from "./webview";
 
-type Message = { type: string; text?: string; action?: string };
+type Message = { type: string; text?: string; action?: string; sessionId?: string };
 type RouteStatus = { provider: string; model: string; tier: string };
+type SessionSummary = {
+  sessionId: string;
+  description: string;
+  updatedAt: string;
+  turnCount: number;
+};
 type ProtocolEvent = {
   type: string;
   provider?: string;
@@ -13,6 +19,12 @@ type ProtocolEvent = {
   question?: string;
   text?: string;
   requiresApproval?: boolean;
+  state?: "started" | "completed" | "failed";
+  kind?: string;
+  title?: string;
+  phaseIndex?: number;
+  phaseTotal?: number;
+  exitCode?: number;
 };
 
 const extensions = [
@@ -31,13 +43,30 @@ const extensions = [
 ];
 
 export function activate(context: vscode.ExtensionContext): void {
-  const provider = new SidebarProvider();
+  const chats = new Map<string, ChatPanel>();
+  const openHistory = () => void HistoryPanel.open(openSession, chats);
+  const openSession = (session: SessionSummary) => {
+    const existing = chats.get(session.sessionId);
+    if (existing) return existing.focus();
+    ChatPanel.open(session, openHistory, chats);
+  };
+  const createChat = async () => {
+    const result = await runCommand(["session", "new"]);
+    if (result.code !== 0) {
+      void vscode.window.showErrorMessage("AIRO could not create a new chat.");
+      return;
+    }
+    const sessions = await listSessionSummaries();
+    if (sessions[0]) openSession(sessions[0]);
+  };
+  const provider = new SidebarProvider(openHistory, undefined, createChat);
   context.subscriptions.push(
     provider,
     vscode.window.registerWebviewViewProvider("airo.sidebar", provider, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
     vscode.commands.registerCommand("airo.runTask", () => provider.focus()),
+    vscode.commands.registerCommand("airo.openHistory", openHistory),
     vscode.commands.registerCommand("airo.openSettings", () =>
       vscode.commands.executeCommand(
         "workbench.action.openSettings",
@@ -53,13 +82,22 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
-  private view?: vscode.WebviewView;
+  protected view?: vscode.WebviewView;
+  protected panel?: vscode.WebviewPanel;
   private child?: ChildProcessWithoutNullStreams;
   private running = false;
   private stopping = false;
   private awaitingInput = false;
-  private activeSession = false;
+  protected activeSession = false;
   private attachments: string[] = [];
+
+  constructor(
+    private readonly onOpenHistory: () => void,
+    protected session?: SessionSummary,
+    private readonly onNewChat?: () => Promise<void>,
+  ) {
+    this.activeSession = Boolean(session);
+  }
 
   dispose(): void {
     this.child?.kill();
@@ -67,33 +105,49 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
 
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
-    view.webview.options = { enableScripts: true };
-    view.webview.html = renderWebview(
-      [...Array(24)].map(() => Math.random().toString(36)[2]).join(""),
-    );
+    this.initializeWebview(view.webview);
     view.onDidDispose(() => {
       this.view = undefined;
     });
-    view.webview.onDidReceiveMessage((message: Message) => void this.receive(message));
+  }
+
+  protected initializeWebview(webview: vscode.Webview): void {
+    webview.options = { enableScripts: true };
+    webview.html = renderWebview([...Array(24)].map(() => Math.random().toString(36)[2]).join(""));
+    webview.onDidReceiveMessage((message: Message) => void this.receive(message));
   }
 
   focus(): void {
     this.view?.show?.(true);
+    this.panel?.reveal(undefined, true);
     this.post({ type: "focus" });
+  }
+
+  isRunning(): boolean {
+    return this.running;
   }
 
   private async receive(message: Message): Promise<void> {
     if (message.type === "ready") {
       this.post({ type: "route", ...this.configuredRoute() });
       this.postState();
-      const result = await this.run(["session"], false);
-      this.activeSession =
-        result.code === 0 && !/No active session for this repo\./.test(result.output);
+      if (!this.session) {
+        const result = await this.run(["session", "--json"], false);
+        try {
+          const session = JSON.parse(result.output) as SessionSummary | null;
+          if (session?.sessionId) this.session = session;
+        } catch {
+          // The regular session status below remains available for older AIRO installations.
+        }
+        this.activeSession = Boolean(this.session);
+      }
       this.post({
         type: "session",
-        value: this.activeSession
-          ? "Connected to the active AIRO session"
-          : "New chat — send a task to begin",
+        value: this.session
+          ? `Session — ${this.session.description}`
+          : this.activeSession
+            ? "Connected to the active AIRO session"
+            : "New chat — send a task to begin",
       });
     } else if (message.type === "attach") await this.pickAttachments();
     else if (message.type === "action") await this.action(message.action ?? "", message.text);
@@ -139,7 +193,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     if (command === "/help") return this.post({ type: "help" });
     if (command === "/clear") return this.post({ type: "clear" });
     if (command === "/attach") return this.pickAttachments();
-    if (command === "/new") return this.newSession(argument || "AIRO sidebar session");
+    if (command === "/new") return this.onNewChat?.();
     if (command === "/exit" || command === "/quit")
       return this.notice("The sidebar stays available. Start a new chat whenever you like.");
     if (["/mode", "/agent", "/tier", "/log"].includes(command))
@@ -169,14 +223,14 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
       );
       return;
     }
-    if (action === "new") return this.newSession("AIRO sidebar session");
+    if (action === "new") return this.onNewChat?.();
+    if (action === "history") return this.onOpenHistory();
     if (action === "stop") return this.stop();
     if (action === "feedback") {
       await this.run(["feedback", text === "bad" ? "bad" : "good"], true, "Feedback");
       return;
     }
     const commands: Record<string, string[]> = {
-      history: ["sessions", "--limit", "5"],
       models: ["models"],
       account: ["account"],
       usage: ["usage"],
@@ -191,12 +245,6 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     this.stopping = this.child.kill();
     this.postState();
     if (!this.stopping) this.notice("AIRO could not stop the current run.");
-  }
-
-  private async newSession(title: string): Promise<void> {
-    const result = await this.run(["session", "new", title], true, "New session");
-    this.activeSession = result.code === 0;
-    if (this.activeSession) this.post({ type: "session", value: "New AIRO session ready" });
   }
 
   private async pickAttachments(): Promise<void> {
@@ -217,7 +265,11 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     const agent = config.get<string>("agent", "auto");
     const tier = config.get<string>("tier", "auto");
     const log = config.get<string>("logLevel", "live");
-    const args = this.activeSession ? ["--continue"] : [];
+    const args = this.session
+      ? ["--session", this.session.sessionId]
+      : this.activeSession
+        ? ["--continue"]
+        : [];
     if (mode === "adaptive") args.push("--adaptive");
     else if (mode === "single") args.push("--single");
     if (agent !== "auto") args.push("--agent", agent);
@@ -225,7 +277,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     return [...args, "--log", log, task];
   }
 
-  private run(
+  protected run(
     args: string[],
     showOutput: boolean,
     label = args.join(" "),
@@ -288,6 +340,18 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
             text: event.question,
           });
           this.postState();
+        } else if (event.type === "phase" && event.kind && event.state) {
+          this.post({
+            type: "phase",
+            state: event.state,
+            kind: event.kind,
+            title: event.title,
+            provider: event.provider,
+            model: event.model,
+            tier: event.tier,
+            phaseIndex: event.phaseIndex,
+            phaseTotal: event.phaseTotal,
+          });
         } else if (event.type === "final" && event.text) {
           hasFinal = true;
           this.post({ type: "final", text: event.text });
@@ -366,7 +430,127 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     this.post({ type: "notice", value });
   }
 
-  private post(message: Record<string, unknown>): void {
-    void this.view?.webview.postMessage(message);
+  protected post(message: Record<string, unknown>): void {
+    const webview = this.view?.webview ?? this.panel?.webview;
+    if (webview) void webview.postMessage(message);
   }
+}
+
+class ChatPanel extends SidebarProvider {
+  private constructor(
+    session: SessionSummary,
+    onOpenHistory: () => void,
+    onNewChat: () => Promise<void>,
+  ) {
+    super(onOpenHistory, session, onNewChat);
+  }
+
+  static open(
+    session: SessionSummary,
+    onOpenHistory: () => void,
+    chats: Map<string, ChatPanel>,
+  ): void {
+    const provider = new ChatPanel(session, onOpenHistory, async () => {
+      const result = await runCommand(["session", "new"]);
+      if (result.code !== 0)
+        return void vscode.window.showErrorMessage("AIRO could not create a new chat.");
+      const sessions = await listSessionSummaries();
+      if (sessions[0]) {
+        const existing = chats.get(sessions[0].sessionId);
+        if (existing) existing.focus();
+        else ChatPanel.open(sessions[0], onOpenHistory, chats);
+      }
+    });
+    const panel = vscode.window.createWebviewPanel(
+      "airo.chat",
+      `AIRO: ${shortDescription(session.description)}`,
+      vscode.ViewColumn.Active,
+      { enableScripts: true, retainContextWhenHidden: true },
+    );
+    provider.panel = panel;
+    chats.set(session.sessionId, provider);
+    provider.initializeWebview(panel.webview);
+    panel.onDidDispose(() => {
+      chats.delete(session.sessionId);
+      provider.dispose();
+    });
+  }
+}
+
+class HistoryPanel {
+  static async open(
+    onSelect: (session: SessionSummary) => void,
+    chats: Map<string, ChatPanel>,
+  ): Promise<void> {
+    const panel = vscode.window.createWebviewPanel(
+      "airo.history",
+      "AIRO: Previous chats",
+      vscode.ViewColumn.Active,
+      { enableScripts: true, retainContextWhenHidden: true },
+    );
+    panel.webview.html = renderHistoryWebview(
+      [...Array(24)].map(() => Math.random().toString(36)[2]).join(""),
+    );
+    panel.webview.onDidReceiveMessage((message: Message) => {
+      if (message.type === "restore" && message.sessionId) {
+        const session = sessions.find((item) => item.sessionId === message.sessionId);
+        if (session) onSelect(session);
+      }
+    });
+    let sessions: SessionSummary[] = [];
+    const result = await runCommand(["sessions", "--json"]);
+    try {
+      sessions = JSON.parse(result.output) as SessionSummary[];
+      if (!Array.isArray(sessions)) throw new Error("Invalid session list");
+      void panel.webview.postMessage({
+        type: "sessions",
+        sessions: sessions.map((session) => ({
+          ...session,
+          running: chats.get(session.sessionId)?.isRunning() ?? false,
+          open: chats.has(session.sessionId),
+        })),
+      });
+    } catch {
+      void panel.webview.postMessage({
+        type: "error",
+        value: "Could not load previous AIRO sessions.",
+      });
+    }
+  }
+}
+
+function shortDescription(value: string): string {
+  return value.replace(/\s+/g, " ").trim().slice(0, 64) || "Untitled chat";
+}
+
+function listSessionSummaries(): Promise<SessionSummary[]> {
+  return runCommand(["sessions", "--json"]).then((result) => {
+    try {
+      const sessions = JSON.parse(result.output) as SessionSummary[];
+      return Array.isArray(sessions) ? sessions : [];
+    } catch {
+      return [];
+    }
+  });
+}
+
+function runCommand(args: string[]): Promise<{ code: number | null; output: string }> {
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (!folder) return Promise.resolve({ code: null, output: "[]" });
+  return new Promise((resolve) => {
+    const child = spawn(
+      vscode.workspace.getConfiguration("airo").get<string>("command", "airo"),
+      args,
+      {
+        cwd: folder.uri.fsPath,
+        shell: false,
+        windowsHide: true,
+        env: { ...process.env, NO_COLOR: "1" },
+      },
+    );
+    let output = "";
+    child.stdout.on("data", (data: Buffer) => (output += data.toString()));
+    child.on("error", () => resolve({ code: null, output: "[]" }));
+    child.on("close", (code) => resolve({ code, output }));
+  });
 }

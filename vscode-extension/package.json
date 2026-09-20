@@ -56,6 +56,10 @@
         "title": "AIRO: Run Task"
       },
       {
+        "command": "airo.openHistory",
+        "title": "AIRO: Open Previous Chats"
+      },
+      {
         "command": "airo.openTerminal",
         "title": "AIRO: Open Terminal"
       },
@@ -117,6 +121,7 @@
     }
   },
   "activationEvents": [
+    "onCommand:airo.openHistory",
     "onCommand:airo.openSettings",
     "onCommand:airo.openTerminal",
     "onCommand:airo.runTask",

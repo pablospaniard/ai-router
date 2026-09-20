@@ -56,51 +56,97 @@ const extensions = [
     "json",
 ];
 function activate(context) {
-    const provider = new SidebarProvider();
+    const chats = new Map();
+    const openHistory = () => void HistoryPanel.open(openSession, chats);
+    const openSession = (session) => {
+        const existing = chats.get(session.sessionId);
+        if (existing)
+            return existing.focus();
+        ChatPanel.open(session, openHistory, chats);
+    };
+    const createChat = async () => {
+        const result = await runCommand(["session", "new"]);
+        if (result.code !== 0) {
+            void vscode.window.showErrorMessage("AIRO could not create a new chat.");
+            return;
+        }
+        const sessions = await listSessionSummaries();
+        if (sessions[0])
+            openSession(sessions[0]);
+    };
+    const provider = new SidebarProvider(openHistory, undefined, createChat);
     context.subscriptions.push(provider, vscode.window.registerWebviewViewProvider("airo.sidebar", provider, {
         webviewOptions: { retainContextWhenHidden: true },
-    }), vscode.commands.registerCommand("airo.runTask", () => provider.focus()), vscode.commands.registerCommand("airo.openSettings", () => vscode.commands.executeCommand("workbench.action.openSettings", "@ext:pablospaniard.airo-vscode")), vscode.commands.registerCommand("airo.openTerminal", () => {
+    }), vscode.commands.registerCommand("airo.runTask", () => provider.focus()), vscode.commands.registerCommand("airo.openHistory", openHistory), vscode.commands.registerCommand("airo.openSettings", () => vscode.commands.executeCommand("workbench.action.openSettings", "@ext:pablospaniard.airo-vscode")), vscode.commands.registerCommand("airo.openTerminal", () => {
         const terminal = vscode.window.createTerminal("AIRO");
         terminal.show();
         terminal.sendText(vscode.workspace.getConfiguration("airo").get("command", "airo"));
     }));
 }
 class SidebarProvider {
+    onOpenHistory;
+    session;
+    onNewChat;
     view;
+    panel;
     child;
     running = false;
     stopping = false;
     awaitingInput = false;
     activeSession = false;
     attachments = [];
+    constructor(onOpenHistory, session, onNewChat) {
+        this.onOpenHistory = onOpenHistory;
+        this.session = session;
+        this.onNewChat = onNewChat;
+        this.activeSession = Boolean(session);
+    }
     dispose() {
         this.child?.kill();
     }
     resolveWebviewView(view) {
         this.view = view;
-        view.webview.options = { enableScripts: true };
-        view.webview.html = (0, webview_1.renderWebview)([...Array(24)].map(() => Math.random().toString(36)[2]).join(""));
+        this.initializeWebview(view.webview);
         view.onDidDispose(() => {
             this.view = undefined;
         });
-        view.webview.onDidReceiveMessage((message) => void this.receive(message));
+    }
+    initializeWebview(webview) {
+        webview.options = { enableScripts: true };
+        webview.html = (0, webview_1.renderWebview)([...Array(24)].map(() => Math.random().toString(36)[2]).join(""));
+        webview.onDidReceiveMessage((message) => void this.receive(message));
     }
     focus() {
         this.view?.show?.(true);
+        this.panel?.reveal(undefined, true);
         this.post({ type: "focus" });
+    }
+    isRunning() {
+        return this.running;
     }
     async receive(message) {
         if (message.type === "ready") {
             this.post({ type: "route", ...this.configuredRoute() });
             this.postState();
-            const result = await this.run(["session"], false);
-            this.activeSession =
-                result.code === 0 && !/No active session for this repo\./.test(result.output);
+            if (!this.session) {
+                const result = await this.run(["session", "--json"], false);
+                try {
+                    const session = JSON.parse(result.output);
+                    if (session?.sessionId)
+                        this.session = session;
+                }
+                catch {
+                    // The regular session status below remains available for older AIRO installations.
+                }
+                this.activeSession = Boolean(this.session);
+            }
             this.post({
                 type: "session",
-                value: this.activeSession
-                    ? "Connected to the active AIRO session"
-                    : "New chat — send a task to begin",
+                value: this.session
+                    ? `Session — ${this.session.description}`
+                    : this.activeSession
+                        ? "Connected to the active AIRO session"
+                        : "New chat — send a task to begin",
             });
         }
         else if (message.type === "attach")
@@ -154,7 +200,7 @@ class SidebarProvider {
         if (command === "/attach")
             return this.pickAttachments();
         if (command === "/new")
-            return this.newSession(argument || "AIRO sidebar session");
+            return this.onNewChat?.();
         if (command === "/exit" || command === "/quit")
             return this.notice("The sidebar stays available. Start a new chat whenever you like.");
         if (["/mode", "/agent", "/tier", "/log"].includes(command))
@@ -177,7 +223,9 @@ class SidebarProvider {
             return;
         }
         if (action === "new")
-            return this.newSession("AIRO sidebar session");
+            return this.onNewChat?.();
+        if (action === "history")
+            return this.onOpenHistory();
         if (action === "stop")
             return this.stop();
         if (action === "feedback") {
@@ -185,7 +233,6 @@ class SidebarProvider {
             return;
         }
         const commands = {
-            history: ["sessions", "--limit", "5"],
             models: ["models"],
             account: ["account"],
             usage: ["usage"],
@@ -202,12 +249,6 @@ class SidebarProvider {
         this.postState();
         if (!this.stopping)
             this.notice("AIRO could not stop the current run.");
-    }
-    async newSession(title) {
-        const result = await this.run(["session", "new", title], true, "New session");
-        this.activeSession = result.code === 0;
-        if (this.activeSession)
-            this.post({ type: "session", value: "New AIRO session ready" });
     }
     async pickAttachments() {
         const files = await vscode.window.showOpenDialog({
@@ -227,7 +268,11 @@ class SidebarProvider {
         const agent = config.get("agent", "auto");
         const tier = config.get("tier", "auto");
         const log = config.get("logLevel", "live");
-        const args = this.activeSession ? ["--continue"] : [];
+        const args = this.session
+            ? ["--session", this.session.sessionId]
+            : this.activeSession
+                ? ["--continue"]
+                : [];
         if (mode === "adaptive")
             args.push("--adaptive");
         else if (mode === "single")
@@ -295,6 +340,19 @@ class SidebarProvider {
                         text: event.question,
                     });
                     this.postState();
+                }
+                else if (event.type === "phase" && event.kind && event.state) {
+                    this.post({
+                        type: "phase",
+                        state: event.state,
+                        kind: event.kind,
+                        title: event.title,
+                        provider: event.provider,
+                        model: event.model,
+                        tier: event.tier,
+                        phaseIndex: event.phaseIndex,
+                        phaseTotal: event.phaseTotal,
+                    });
                 }
                 else if (event.type === "final" && event.text) {
                     hasFinal = true;
@@ -378,7 +436,102 @@ class SidebarProvider {
         this.post({ type: "notice", value });
     }
     post(message) {
-        void this.view?.webview.postMessage(message);
+        const webview = this.view?.webview ?? this.panel?.webview;
+        if (webview)
+            void webview.postMessage(message);
     }
+}
+class ChatPanel extends SidebarProvider {
+    constructor(session, onOpenHistory, onNewChat) {
+        super(onOpenHistory, session, onNewChat);
+    }
+    static open(session, onOpenHistory, chats) {
+        const provider = new ChatPanel(session, onOpenHistory, async () => {
+            const result = await runCommand(["session", "new"]);
+            if (result.code !== 0)
+                return void vscode.window.showErrorMessage("AIRO could not create a new chat.");
+            const sessions = await listSessionSummaries();
+            if (sessions[0]) {
+                const existing = chats.get(sessions[0].sessionId);
+                if (existing)
+                    existing.focus();
+                else
+                    ChatPanel.open(sessions[0], onOpenHistory, chats);
+            }
+        });
+        const panel = vscode.window.createWebviewPanel("airo.chat", `AIRO: ${shortDescription(session.description)}`, vscode.ViewColumn.Active, { enableScripts: true, retainContextWhenHidden: true });
+        provider.panel = panel;
+        chats.set(session.sessionId, provider);
+        provider.initializeWebview(panel.webview);
+        panel.onDidDispose(() => {
+            chats.delete(session.sessionId);
+            provider.dispose();
+        });
+    }
+}
+class HistoryPanel {
+    static async open(onSelect, chats) {
+        const panel = vscode.window.createWebviewPanel("airo.history", "AIRO: Previous chats", vscode.ViewColumn.Active, { enableScripts: true, retainContextWhenHidden: true });
+        panel.webview.html = (0, webview_1.renderHistoryWebview)([...Array(24)].map(() => Math.random().toString(36)[2]).join(""));
+        panel.webview.onDidReceiveMessage((message) => {
+            if (message.type === "restore" && message.sessionId) {
+                const session = sessions.find((item) => item.sessionId === message.sessionId);
+                if (session)
+                    onSelect(session);
+            }
+        });
+        let sessions = [];
+        const result = await runCommand(["sessions", "--json"]);
+        try {
+            sessions = JSON.parse(result.output);
+            if (!Array.isArray(sessions))
+                throw new Error("Invalid session list");
+            void panel.webview.postMessage({
+                type: "sessions",
+                sessions: sessions.map((session) => ({
+                    ...session,
+                    running: chats.get(session.sessionId)?.isRunning() ?? false,
+                    open: chats.has(session.sessionId),
+                })),
+            });
+        }
+        catch {
+            void panel.webview.postMessage({
+                type: "error",
+                value: "Could not load previous AIRO sessions.",
+            });
+        }
+    }
+}
+function shortDescription(value) {
+    return value.replace(/\s+/g, " ").trim().slice(0, 64) || "Untitled chat";
+}
+function listSessionSummaries() {
+    return runCommand(["sessions", "--json"]).then((result) => {
+        try {
+            const sessions = JSON.parse(result.output);
+            return Array.isArray(sessions) ? sessions : [];
+        }
+        catch {
+            return [];
+        }
+    });
+}
+function runCommand(args) {
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    if (!folder)
+        return Promise.resolve({ code: null, output: "[]" });
+    return new Promise((resolve) => {
+        const child = (0, node_child_process_1.spawn)(vscode.workspace.getConfiguration("airo").get("command", "airo"), args, {
+            cwd: folder.uri.fsPath,
+            shell: false,
+            windowsHide: true,
+            env: { ...process.env, NO_COLOR: "1" },
+        });
+        let output = "";
+        child.stdout.on("data", (data) => (output += data.toString()));
+        child.on("error", () => resolve({ code: null, output: "[]" }));
+        child.on("close", (code) => resolve({ code, output }));
+    });
 }
 //# sourceMappingURL=extension.js.map

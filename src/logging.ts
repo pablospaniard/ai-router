@@ -170,6 +170,16 @@ export class RunLogger {
       phaseIndex: meta.phaseIndex,
       phaseTotal: meta.phaseTotal,
     });
+    this.event("phase", {
+      state: "started",
+      kind: meta.phaseKind,
+      title: `${meta.phaseKind[0].toUpperCase()}${meta.phaseKind.slice(1)}`,
+      provider: meta.agent,
+      model: meta.model,
+      tier: meta.tier,
+      phaseIndex: meta.phaseIndex,
+      phaseTotal: meta.phaseTotal,
+    });
     this.console("");
     this.console(
       sectionRule(
@@ -182,6 +192,15 @@ export class RunLogger {
   }
 
   phaseEnd(meta: PhaseLogMeta, exitCode: number, durationMs: number) {
+    this.event("phase", {
+      state: exitCode === 0 ? "completed" : "failed",
+      kind: meta.phaseKind,
+      title: `${meta.phaseKind[0].toUpperCase()}${meta.phaseKind.slice(1)}`,
+      provider: meta.agent,
+      phaseIndex: meta.phaseIndex,
+      phaseTotal: meta.phaseTotal,
+      exitCode,
+    });
     this.status(
       `phase ${meta.phaseIndex}/${meta.phaseTotal} complete: ${meta.phaseKind} exit=${exitCode} duration=${(durationMs / 1000).toFixed(1)}s`,
     );
