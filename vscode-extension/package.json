@@ -42,6 +42,10 @@
           "type": "webview",
           "id": "airo.sidebar",
           "name": "AIRO"
+        },
+        {
+          "id": "airo.attachments",
+          "name": "Attach Files"
         }
       ]
     },

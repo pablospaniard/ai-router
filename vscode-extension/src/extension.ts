@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import path from "node:path";
+import os from "node:os";
 import { renderWebview } from "./webview";
 
 type Message = {
@@ -10,7 +11,12 @@ type Message = {
   sessionId?: string;
   chatId?: string;
   url?: string;
+  files?: string[];
+  dataUrl?: string;
+  name?: string;
+  file?: string;
 };
+type AttachmentPreview = { name: string; path: string; dataUrl: string };
 type RouteStatus = { provider: string; model: string; tier: string };
 type SessionSummary = {
   sessionId: string;
@@ -33,6 +39,7 @@ type SidebarChat = {
   session?: SessionSummary;
   activeSession: boolean;
   attachments: string[];
+  attachmentPreviews: Map<string, string>;
   hydrated: boolean;
 };
 type ProtocolEvent = {
@@ -51,27 +58,17 @@ type ProtocolEvent = {
   exitCode?: number;
 };
 
-const extensions = [
-  "png",
-  "jpg",
-  "jpeg",
-  "gif",
-  "webp",
-  "bmp",
-  "tif",
-  "tiff",
-  "pdf",
-  "md",
-  "markdown",
-  "json",
-];
-
 export function activate(context: vscode.ExtensionContext): void {
   const provider = new SidebarProvider();
+  const attachmentDropProvider = new AttachmentDropProvider(provider);
   context.subscriptions.push(
     provider,
     vscode.window.registerWebviewViewProvider("airo.sidebar", provider, {
       webviewOptions: { retainContextWhenHidden: true },
+    }),
+    vscode.window.createTreeView("airo.attachments", {
+      treeDataProvider: attachmentDropProvider,
+      dragAndDropController: attachmentDropProvider,
     }),
     vscode.commands.registerCommand("airo.runTask", () => provider.focus()),
     vscode.commands.registerCommand("airo.openHistory", () => provider.openHistory()),
@@ -98,6 +95,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   private awaitingInput = false;
   protected activeSession = false;
   private attachments: string[] = [];
+  private attachmentPreviews = new Map<string, string>();
   private readonly sidebarChats = new Map<string, SidebarChat>();
   private activeChatId: string;
 
@@ -136,9 +134,15 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     void this.showHistory();
   }
 
+  async attachDroppedUris(uris: readonly vscode.Uri[]): Promise<void> {
+    await this.addAttachments(uris.map((uri) => uri.toString()));
+    this.focus();
+  }
+
   private async receive(message: Message): Promise<void> {
     if (message.type === "ready") {
       this.postTabs();
+      this.postAttachments();
       this.post({ type: "route", ...this.configuredRoute() });
       this.postState();
       if (!this.session) {
@@ -165,13 +169,20 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     } else if (message.type === "newTab") await this.newTab();
     else if (message.type === "closeTab" && message.chatId) this.closeTab(message.chatId);
     else if (message.type === "openLink" && message.url) await this.openLink(message.url);
+    else if (message.type === "openFile" && message.file) await this.openFile(message.file);
+    else if (message.type === "removeAttachment" && message.file)
+      this.removeAttachment(message.file, message.chatId);
     else if (message.type === "openSession" && message.sessionId)
       await this.openSessionTab(message.sessionId);
     else if (message.type === "switchTab" && message.chatId) this.switchTab(message.chatId);
-    else if (message.type === "attach") await this.pickAttachments();
+    else if (message.type === "attach") await this.pickAttachments(message.chatId);
+    else if (message.type === "dropAttachments" && message.files)
+      await this.addAttachments(message.files, message.chatId);
+    else if (message.type === "clipboardImage" && message.dataUrl)
+      await this.addClipboardImage(message.dataUrl, message.name, message.chatId);
     else if (message.type === "action") await this.action(message.action ?? "", message.text);
-    else if (message.type === "prompt" && message.text?.trim())
-      await this.prompt(message.text.trim());
+    else if (message.type === "prompt" && (message.text?.trim() || this.attachments.length))
+      await this.prompt(message.text?.trim() || "Please inspect the attached file(s).");
   }
 
   private async prompt(text: string): Promise<void> {
@@ -201,7 +212,9 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
         "\nUse the provider's local file inspection capability if available."
       : "";
     this.attachments = [];
-    this.post({ type: "attachments", files: [] });
+    this.attachmentPreviews.clear();
+    this.saveActiveChat();
+    this.postAttachments();
     const chatId = this.activeChatId;
     const result = await this.run(this.taskArgs(text + attached), true, text);
     if (result.started) {
@@ -237,6 +250,32 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     }
     if (uri.scheme !== "https" && uri.scheme !== "http") return;
     await vscode.env.openExternal(uri);
+  }
+
+  private async openFile(value: string): Promise<void> {
+    if (!path.isAbsolute(value)) return;
+    const uri = vscode.Uri.file(path.normalize(value));
+    try {
+      const stat = await vscode.workspace.fs.stat(uri);
+      if (stat.type & vscode.FileType.Directory) return;
+      await vscode.commands.executeCommand("vscode.open", uri);
+    } catch {
+      this.notice("That attachment is no longer available.");
+    }
+  }
+
+  private removeAttachment(value: string, chatId = this.activeChatId): void {
+    if (!path.isAbsolute(value)) return;
+    const file = path.normalize(value);
+    const chat = this.sidebarChats.get(chatId);
+    if (!chat) return;
+    chat.attachments = chat.attachments.filter((attachment) => attachment !== file);
+    chat.attachmentPreviews.delete(file);
+    if (chatId === this.activeChatId) {
+      this.attachments = [...chat.attachments];
+      this.attachmentPreviews = new Map(chat.attachmentPreviews);
+    }
+    this.postAttachments(chatId);
   }
 
   private async slash(input: string): Promise<void> {
@@ -309,17 +348,108 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     if (!this.stopping) this.notice("AIRO could not stop the current run.");
   }
 
-  private async pickAttachments(): Promise<void> {
+  private async pickAttachments(chatId = this.activeChatId): Promise<void> {
     const files = await vscode.window.showOpenDialog({
       canSelectMany: true,
       canSelectFiles: true,
       canSelectFolders: false,
-      filters: { "AIRO attachments": extensions },
     });
     if (!files?.length) return;
-    this.attachments.push(...files.map((file: vscode.Uri) => file.fsPath));
-    this.saveActiveChat();
-    this.post({ type: "attachments", files: this.attachments.map((file) => path.basename(file)) });
+    await this.addAttachments(
+      files.map((file: vscode.Uri) => file.fsPath),
+      chatId,
+    );
+  }
+
+  private async addAttachments(files: string[], chatId = this.activeChatId): Promise<void> {
+    const candidates = files.flatMap((file) => {
+      if (typeof file !== "string") return [];
+      if (path.isAbsolute(file)) return [path.normalize(file)];
+      try {
+        const uri = vscode.Uri.parse(file, true);
+        return uri.scheme === "file" || uri.scheme === "vscode-remote" ? [uri.fsPath] : [];
+      } catch {
+        return [];
+      }
+    });
+    const valid = new Set<string>();
+    let invalidCount = 0;
+    for (const file of candidates) {
+      try {
+        const stat = await vscode.workspace.fs.stat(vscode.Uri.file(file));
+        if (stat.type & vscode.FileType.Directory) invalidCount += 1;
+        else valid.add(path.normalize(file));
+      } catch {
+        // Ignore stale or malformed resources supplied by a drop event.
+        invalidCount += 1;
+      }
+    }
+    const chat = this.sidebarChats.get(chatId);
+    if (!chat) return;
+    const attachments = chatId === this.activeChatId ? this.attachments : chat.attachments;
+    const updated = [...new Set([...attachments, ...valid])];
+    chat.attachments = updated;
+    if (chatId === this.activeChatId) this.attachments = updated;
+    this.postAttachments(chatId);
+    if (invalidCount) {
+      this.notice(
+        "Some dropped items could not be attached because they are not local files.",
+        chatId,
+      );
+    }
+  }
+
+  private async addClipboardImage(
+    dataUrl: string,
+    name = `screenshot-${Date.now()}.png`,
+    chatId = this.activeChatId,
+  ): Promise<void> {
+    const match = /^data:image\/(png|jpeg|webp|gif);base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+    if (!match)
+      return this.notice("Only PNG, JPEG, WebP, and GIF clipboard images are supported.", chatId);
+    let file: string;
+    try {
+      const tempDir = path.join(os.tmpdir(), "airo-attachments");
+      await vscode.workspace.fs.createDirectory(vscode.Uri.file(tempDir));
+      const extension = match[1] === "jpeg" ? "jpg" : match[1];
+      file = path.join(
+        tempDir,
+        `${path.parse(name).name || "screenshot"}-${Date.now()}.${extension}`,
+      );
+      await vscode.workspace.fs.writeFile(vscode.Uri.file(file), Buffer.from(match[2], "base64"));
+    } catch {
+      return this.notice("The clipboard image could not be saved as an attachment.", chatId);
+    }
+    const chat = this.sidebarChats.get(chatId);
+    if (!chat) return;
+    chat.attachments = [...chat.attachments, file];
+    chat.attachmentPreviews.set(file, dataUrl);
+    if (chatId === this.activeChatId) {
+      this.attachments = [...chat.attachments];
+      this.attachmentPreviews = new Map(chat.attachmentPreviews);
+    }
+    this.postAttachments(chatId);
+  }
+
+  private previewsFor(attachments: string[], previews: Map<string, string>): AttachmentPreview[] {
+    return attachments.flatMap((file) => {
+      const dataUrl = previews.get(file);
+      return dataUrl ? [{ name: path.basename(file), path: file, dataUrl }] : [];
+    });
+  }
+
+  private postAttachments(chatId = this.activeChatId): void {
+    const chat = this.sidebarChats.get(chatId);
+    if (!chat) return;
+    const attachments = chatId === this.activeChatId ? this.attachments : chat.attachments;
+    const previews =
+      chatId === this.activeChatId ? this.attachmentPreviews : chat.attachmentPreviews;
+    this.postToChat(chatId, {
+      type: "attachments",
+      files: attachments.map((file) => path.basename(file)),
+      items: attachments.map((file) => ({ name: path.basename(file), path: file })),
+      previews: this.previewsFor(attachments, previews),
+    });
   }
 
   private taskArgs(task: string): string[] {
@@ -487,6 +617,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
       session,
       activeSession: Boolean(session),
       attachments: [],
+      attachmentPreviews: new Map(),
       hydrated: false,
     };
   }
@@ -497,6 +628,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     chat.session = this.session;
     chat.activeSession = this.activeSession;
     chat.attachments = [...this.attachments];
+    chat.attachmentPreviews = new Map(this.attachmentPreviews);
     if (this.session && chat.title === "New chat") {
       chat.title = chatTitle(this.session.description);
     }
@@ -518,6 +650,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     this.session = chat.session;
     this.activeSession = chat.activeSession;
     this.attachments = [...chat.attachments];
+    this.attachmentPreviews = new Map(chat.attachmentPreviews);
   }
 
   private async newTab(): Promise<void> {
@@ -528,7 +661,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     this.postTabs();
     this.post({ type: "activateTab", chatId: chat.id });
     this.post({ type: "session", value: "New chat — send a task to begin" });
-    this.post({ type: "attachments", files: [] });
+    this.postAttachments();
     this.post({ type: "route", ...this.configuredRoute() });
     this.postState();
   }
@@ -577,10 +710,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
         ? `Chat — ${chatTitle(chat.session.description)}`
         : "New chat — send a task to begin",
     });
-    this.post({
-      type: "attachments",
-      files: chat.attachments.map((file) => path.basename(file)),
-    });
+    this.postAttachments(chat.id);
     this.post({ type: "route", ...this.configuredRoute() });
     this.postState();
   }
@@ -665,6 +795,53 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   protected post(message: Record<string, unknown>): void {
     const webview = this.view?.webview;
     if (webview) void webview.postMessage(message);
+  }
+}
+
+type AttachmentDropTarget = { readonly id: "attachment-drop-target" };
+
+class AttachmentDropProvider
+  implements
+    vscode.TreeDataProvider<AttachmentDropTarget>,
+    vscode.TreeDragAndDropController<AttachmentDropTarget>
+{
+  readonly dragMimeTypes: string[] = [];
+  readonly dropMimeTypes = ["text/uri-list"];
+  private readonly target: AttachmentDropTarget = { id: "attachment-drop-target" };
+
+  constructor(private readonly sidebar: SidebarProvider) {}
+
+  getTreeItem(): vscode.TreeItem {
+    const item = new vscode.TreeItem("Drop files here", vscode.TreeItemCollapsibleState.None);
+    item.description = "attaches to active chat";
+    item.iconPath = new vscode.ThemeIcon("files");
+    item.tooltip = "Drop files from the VS Code Explorer to attach them to the active AIRO chat.";
+    return item;
+  }
+
+  getChildren(element?: AttachmentDropTarget): AttachmentDropTarget[] {
+    return element ? [] : [this.target];
+  }
+
+  async handleDrop(
+    _target: AttachmentDropTarget | undefined,
+    dataTransfer: vscode.DataTransfer,
+  ): Promise<void> {
+    const item = dataTransfer.get("text/uri-list");
+    if (!item) return;
+    const value = await item.asString();
+    const uris = value
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#"))
+      .flatMap((line) => {
+        try {
+          return [vscode.Uri.parse(line, true)];
+        } catch {
+          return [];
+        }
+      });
+    if (uris.length) await this.sidebar.attachDroppedUris(uris);
   }
 }
 
