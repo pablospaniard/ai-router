@@ -128,6 +128,8 @@ export interface LearningHint {
 }
 
 export function learningHints(task: string, config: HistoryConfig): LearningHint {
+  const maxAgentBoost = 8;
+  const maxTierBoost = 6;
   const empty: LearningHint = {
     agentBoosts: { claude: 0, codex: 0 },
     tierBoosts: { fast: 0, balanced: 0, deep: 0 },
@@ -144,8 +146,14 @@ export function learningHints(task: string, config: HistoryConfig): LearningHint
 
   for (const { r, sim } of similar) {
     const sign = r.feedback === "good" ? 1 : -1;
-    empty.agentBoosts[r.agent] += sign * 4 * sim;
-    empty.tierBoosts[r.modelTier] += sign * 3 * sim;
+    empty.agentBoosts[r.agent] = Math.max(
+      -maxAgentBoost,
+      Math.min(maxAgentBoost, empty.agentBoosts[r.agent] + sign * 4 * sim),
+    );
+    empty.tierBoosts[r.modelTier] = Math.max(
+      -maxTierBoost,
+      Math.min(maxTierBoost, empty.tierBoosts[r.modelTier] + sign * 3 * sim),
+    );
   }
 
   if (similar.length) {
