@@ -16,11 +16,6 @@
     "url": "https://github.com/pablospaniard/airo-cli.git"
   },
   "publisher": "pablospaniard",
-  "files": [
-    "LICENSE",
-    "media/**",
-    "out/**"
-  ],
   "main": "./out/extension.js",
   "scripts": {
     "compile": "tsc -p ./",

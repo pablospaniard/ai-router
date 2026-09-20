@@ -56,50 +56,32 @@ const extensions = [
     "json",
 ];
 function activate(context) {
-    const chats = new Map();
-    const openHistory = () => void HistoryPanel.open(openSession, chats);
-    const openSession = (session) => {
-        const existing = chats.get(session.sessionId);
-        if (existing)
-            return existing.focus();
-        ChatPanel.open(session, openHistory, chats);
-    };
-    const createChat = async () => {
-        const result = await runCommand(["session", "new"]);
-        if (result.code !== 0) {
-            void vscode.window.showErrorMessage("AIRO could not create a new chat.");
-            return;
-        }
-        const sessions = await listSessionSummaries();
-        if (sessions[0])
-            openSession(sessions[0]);
-    };
-    const provider = new SidebarProvider(openHistory, undefined, createChat);
+    const provider = new SidebarProvider();
     context.subscriptions.push(provider, vscode.window.registerWebviewViewProvider("airo.sidebar", provider, {
         webviewOptions: { retainContextWhenHidden: true },
-    }), vscode.commands.registerCommand("airo.runTask", () => provider.focus()), vscode.commands.registerCommand("airo.openHistory", openHistory), vscode.commands.registerCommand("airo.openSettings", () => vscode.commands.executeCommand("workbench.action.openSettings", "@ext:pablospaniard.airo-vscode")), vscode.commands.registerCommand("airo.openTerminal", () => {
+    }), vscode.commands.registerCommand("airo.runTask", () => provider.focus()), vscode.commands.registerCommand("airo.openHistory", () => provider.openHistory()), vscode.commands.registerCommand("airo.openSettings", () => vscode.commands.executeCommand("workbench.action.openSettings", "@ext:pablospaniard.airo-vscode")), vscode.commands.registerCommand("airo.openTerminal", () => {
         const terminal = vscode.window.createTerminal("AIRO");
         terminal.show();
         terminal.sendText(vscode.workspace.getConfiguration("airo").get("command", "airo"));
     }));
 }
 class SidebarProvider {
-    onOpenHistory;
     session;
-    onNewChat;
     view;
-    panel;
     child;
     running = false;
     stopping = false;
     awaitingInput = false;
     activeSession = false;
     attachments = [];
-    constructor(onOpenHistory, session, onNewChat) {
-        this.onOpenHistory = onOpenHistory;
+    sidebarChats = new Map();
+    activeChatId;
+    constructor(session) {
         this.session = session;
-        this.onNewChat = onNewChat;
         this.activeSession = Boolean(session);
+        const chat = this.createChatState(session);
+        this.activeChatId = chat.id;
+        this.sidebarChats.set(chat.id, chat);
     }
     dispose() {
         this.child?.kill();
@@ -118,14 +100,14 @@ class SidebarProvider {
     }
     focus() {
         this.view?.show?.(true);
-        this.panel?.reveal(undefined, true);
         this.post({ type: "focus" });
     }
-    isRunning() {
-        return this.running;
+    openHistory() {
+        void this.showHistory();
     }
     async receive(message) {
         if (message.type === "ready") {
+            this.postTabs();
             this.post({ type: "route", ...this.configuredRoute() });
             this.postState();
             if (!this.session) {
@@ -139,16 +121,23 @@ class SidebarProvider {
                     // The regular session status below remains available for older AIRO installations.
                 }
                 this.activeSession = Boolean(this.session);
+                this.saveActiveChat();
             }
             this.post({
                 type: "session",
                 value: this.session
-                    ? `Session — ${this.session.description}`
+                    ? `Chat — ${chatTitle(this.session.description)}`
                     : this.activeSession
-                        ? "Connected to the active AIRO session"
+                        ? "Connected to the active AIRO chat"
                         : "New chat — send a task to begin",
             });
         }
+        else if (message.type === "newTab")
+            await this.newTab();
+        else if (message.type === "openSession" && message.sessionId)
+            await this.openSessionTab(message.sessionId);
+        else if (message.type === "switchTab" && message.chatId)
+            this.switchTab(message.chatId);
         else if (message.type === "attach")
             await this.pickAttachments();
         else if (message.type === "action")
@@ -170,6 +159,11 @@ class SidebarProvider {
         }
         if (text.startsWith("/"))
             return this.slash(text);
+        const chat = this.sidebarChats.get(this.activeChatId);
+        if (chat?.title === "New chat") {
+            chat.title = shortDescription(text);
+            this.postTabs();
+        }
         const attached = this.attachments.length
             ? "\n\nAttached local file(s) for inspection:\n" +
                 this.attachments.map((file) => `- ${file}`).join("\n") +
@@ -178,8 +172,21 @@ class SidebarProvider {
         this.attachments = [];
         this.post({ type: "attachments", files: [] });
         const result = await this.run(this.taskArgs(text + attached), true, text);
-        if (result.started)
+        if (result.started) {
             this.activeSession = true;
+            if (!this.session) {
+                const sessionResult = await runCommand(["session", "--json"]);
+                try {
+                    const session = JSON.parse(sessionResult.output);
+                    if (session?.sessionId)
+                        this.session = session;
+                }
+                catch {
+                    // Continue mode remains available as a fallback for older CLI versions.
+                }
+            }
+            this.saveActiveChat();
+        }
     }
     async slash(input) {
         const [command, ...parts] = input.split(/\s+/);
@@ -200,7 +207,7 @@ class SidebarProvider {
         if (command === "/attach")
             return this.pickAttachments();
         if (command === "/new")
-            return this.onNewChat?.();
+            return this.newTab();
         if (command === "/exit" || command === "/quit")
             return this.notice("The sidebar stays available. Start a new chat whenever you like.");
         if (["/mode", "/agent", "/tier", "/log"].includes(command))
@@ -223,9 +230,9 @@ class SidebarProvider {
             return;
         }
         if (action === "new")
-            return this.onNewChat?.();
+            return this.newTab();
         if (action === "history")
-            return this.onOpenHistory();
+            return this.showHistory();
         if (action === "stop")
             return this.stop();
         if (action === "feedback") {
@@ -260,6 +267,7 @@ class SidebarProvider {
         if (!files?.length)
             return;
         this.attachments.push(...files.map((file) => file.fsPath));
+        this.saveActiveChat();
         this.post({ type: "attachments", files: this.attachments.map((file) => node_path_1.default.basename(file)) });
     }
     taskArgs(task) {
@@ -421,6 +429,118 @@ class SidebarProvider {
             tier: config.get("tier", "auto"),
         };
     }
+    createChatState(session) {
+        return {
+            id: session?.sessionId ?? `draft-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            title: session ? chatTitle(session.description) : "New chat",
+            session,
+            activeSession: Boolean(session),
+            attachments: [],
+        };
+    }
+    saveActiveChat() {
+        const chat = this.sidebarChats.get(this.activeChatId);
+        if (!chat)
+            return;
+        chat.session = this.session;
+        chat.activeSession = this.activeSession;
+        chat.attachments = [...this.attachments];
+        if (this.session && chat.title === "New chat") {
+            chat.title = chatTitle(this.session.description);
+        }
+        if (this.session && chat.id.startsWith("draft-")) {
+            const oldId = chat.id;
+            this.sidebarChats.delete(chat.id);
+            chat.id = this.session.sessionId;
+            this.activeChatId = chat.id;
+            this.sidebarChats.set(chat.id, chat);
+            this.post({ type: "replaceTabId", oldId, newId: chat.id });
+            this.postTabs();
+        }
+    }
+    loadChat(chat) {
+        this.activeChatId = chat.id;
+        this.session = chat.session;
+        this.activeSession = chat.activeSession;
+        this.attachments = [...chat.attachments];
+    }
+    async newTab() {
+        if (this.running)
+            return this.notice("Stop the current run before opening another chat.");
+        this.saveActiveChat();
+        const chat = this.createChatState();
+        this.sidebarChats.set(chat.id, chat);
+        this.loadChat(chat);
+        this.postTabs();
+        this.post({ type: "activateTab", chatId: chat.id });
+        this.post({ type: "session", value: "New chat — send a task to begin" });
+        this.post({ type: "attachments", files: [] });
+        this.post({ type: "route", ...this.configuredRoute() });
+        this.postState();
+    }
+    switchTab(chatId) {
+        if (chatId === this.activeChatId)
+            return;
+        if (this.running)
+            return this.notice("Stop the current run before switching chats.");
+        const chat = this.sidebarChats.get(chatId);
+        if (!chat)
+            return;
+        this.saveActiveChat();
+        this.activateChat(chat);
+    }
+    activateChat(chat) {
+        this.loadChat(chat);
+        this.post({ type: "activateTab", chatId: chat.id });
+        this.post({
+            type: "session",
+            value: chat.session
+                ? `Chat — ${chatTitle(chat.session.description)}`
+                : "New chat — send a task to begin",
+        });
+        this.post({
+            type: "attachments",
+            files: chat.attachments.map((file) => node_path_1.default.basename(file)),
+        });
+        this.post({ type: "route", ...this.configuredRoute() });
+        this.postState();
+    }
+    async showHistory() {
+        const sessions = await listSessionSummaries();
+        this.post({
+            type: "history",
+            sessions: sessions.map((session) => ({
+                ...session,
+                description: chatTitle(session.description),
+                open: [...this.sidebarChats.values()].some((chat) => chat.session?.sessionId === session.sessionId),
+            })),
+        });
+    }
+    async openSessionTab(sessionId) {
+        if (this.running)
+            return this.notice("Stop the current run before opening another chat.");
+        this.saveActiveChat();
+        const existing = [...this.sidebarChats.values()].find((chat) => chat.session?.sessionId === sessionId);
+        if (existing) {
+            this.activateChat(existing);
+            this.postTabs();
+            return;
+        }
+        const session = (await listSessionSummaries()).find((item) => item.sessionId === sessionId);
+        if (!session)
+            return this.notice("That chat is no longer available.");
+        const chat = this.createChatState(session);
+        this.sidebarChats.set(chat.id, chat);
+        this.activateChat(chat);
+        this.postTabs();
+    }
+    postTabs() {
+        this.post({
+            type: "tabs",
+            activeChatId: this.activeChatId,
+            tabs: [...this.sidebarChats.values()].map((chat) => ({ id: chat.id, title: chat.title })),
+        });
+    }
     plainText(value) {
         return value.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"), "");
     }
@@ -436,75 +556,17 @@ class SidebarProvider {
         this.post({ type: "notice", value });
     }
     post(message) {
-        const webview = this.view?.webview ?? this.panel?.webview;
+        const webview = this.view?.webview;
         if (webview)
             void webview.postMessage(message);
     }
 }
-class ChatPanel extends SidebarProvider {
-    constructor(session, onOpenHistory, onNewChat) {
-        super(onOpenHistory, session, onNewChat);
-    }
-    static open(session, onOpenHistory, chats) {
-        const provider = new ChatPanel(session, onOpenHistory, async () => {
-            const result = await runCommand(["session", "new"]);
-            if (result.code !== 0)
-                return void vscode.window.showErrorMessage("AIRO could not create a new chat.");
-            const sessions = await listSessionSummaries();
-            if (sessions[0]) {
-                const existing = chats.get(sessions[0].sessionId);
-                if (existing)
-                    existing.focus();
-                else
-                    ChatPanel.open(sessions[0], onOpenHistory, chats);
-            }
-        });
-        const panel = vscode.window.createWebviewPanel("airo.chat", `AIRO: ${shortDescription(session.description)}`, vscode.ViewColumn.Active, { enableScripts: true, retainContextWhenHidden: true });
-        provider.panel = panel;
-        chats.set(session.sessionId, provider);
-        provider.initializeWebview(panel.webview);
-        panel.onDidDispose(() => {
-            chats.delete(session.sessionId);
-            provider.dispose();
-        });
-    }
-}
-class HistoryPanel {
-    static async open(onSelect, chats) {
-        const panel = vscode.window.createWebviewPanel("airo.history", "AIRO: Previous chats", vscode.ViewColumn.Active, { enableScripts: true, retainContextWhenHidden: true });
-        panel.webview.html = (0, webview_1.renderHistoryWebview)([...Array(24)].map(() => Math.random().toString(36)[2]).join(""));
-        panel.webview.onDidReceiveMessage((message) => {
-            if (message.type === "restore" && message.sessionId) {
-                const session = sessions.find((item) => item.sessionId === message.sessionId);
-                if (session)
-                    onSelect(session);
-            }
-        });
-        let sessions = [];
-        const result = await runCommand(["sessions", "--json"]);
-        try {
-            sessions = JSON.parse(result.output);
-            if (!Array.isArray(sessions))
-                throw new Error("Invalid session list");
-            void panel.webview.postMessage({
-                type: "sessions",
-                sessions: sessions.map((session) => ({
-                    ...session,
-                    running: chats.get(session.sessionId)?.isRunning() ?? false,
-                    open: chats.has(session.sessionId),
-                })),
-            });
-        }
-        catch {
-            void panel.webview.postMessage({
-                type: "error",
-                value: "Could not load previous AIRO sessions.",
-            });
-        }
-    }
-}
 function shortDescription(value) {
     return value.replace(/\s+/g, " ").trim().slice(0, 64) || "Untitled chat";
+}
+function chatTitle(value) {
+    const title = shortDescription(value);
+    return /^(?:new session|airo sidebar session)$/i.test(title) ? "New chat" : title;
 }
 function listSessionSummaries() {
     return runCommand(["sessions", "--json"]).then((result) => {
