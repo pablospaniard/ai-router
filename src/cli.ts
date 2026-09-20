@@ -306,10 +306,9 @@ async function singleRun(
     clarificationCount++;
     logger.question(result.question);
     const answer = await askUser(result.question);
-    const permissionMode =
-      routed.agent === "claude" && isApprovalAnswer(answer) ? "bypassPermissions" : undefined;
+    const elevated = isApprovalAnswer(answer);
     logger.status(
-      permissionMode
+      elevated
         ? "approval received → resuming single phase with elevated permissions"
         : "input received → resuming single phase",
     );
@@ -319,7 +318,7 @@ async function singleRun(
       capture: true,
       logger,
       logMeta,
-      permissionMode,
+      elevated,
     });
     usage = addTokenUsage(usage, result.usage);
   }

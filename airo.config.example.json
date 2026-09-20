@@ -40,6 +40,10 @@
       }
     }
   },
+  "permissions": {
+    "mode": "prompt",
+    "networkAccess": true
+  },
   "history": {
     "enabled": true,
     "learningEnabled": true,

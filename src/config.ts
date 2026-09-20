@@ -28,6 +28,7 @@ export const DEFAULT_CONFIG: RouterConfig = {
       deep: { model: "gpt-5.6-sol", effort: "xhigh" },
     },
   },
+  permissions: { mode: "prompt", networkAccess: true },
   history: { enabled: true, learningEnabled: true, similarityThreshold: 0.25 },
   logging: { level: "live", persist: true },
   orchestration: {
@@ -77,6 +78,7 @@ export function loadConfig(cwd = process.cwd()): { config: RouterConfig; path?: 
         ...parsed,
         claude: mergeProvider(DEFAULT_CONFIG.claude, parsed.claude),
         codex: mergeProvider(DEFAULT_CONFIG.codex, parsed.codex),
+        permissions: { ...DEFAULT_CONFIG.permissions, ...parsed.permissions },
         history: { ...DEFAULT_CONFIG.history, ...parsed.history },
         orchestration: { ...DEFAULT_CONFIG.orchestration, ...parsed.orchestration },
         logging: { ...DEFAULT_CONFIG.logging, ...parsed.logging },

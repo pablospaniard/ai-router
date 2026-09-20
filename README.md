@@ -293,7 +293,9 @@ This creates `.airo.json` in the current directory. Project configuration takes 
 
 On the first command after upgrading, AIRO copies legacy global configuration and data into `~/.config/airo/` and `~/.local/share/airo/`. The old files remain untouched as a rollback path. Project-level `.ai-router.json` files continue to be discovered.
 
-Claude runs use `permissionMode: "acceptEdits"` by default so headless implementation tasks can edit the working tree. Change it to `auto`, `manual`, `dontAsk`, or `plan` in configuration when a more restrictive mode is appropriate. The legacy `allowedModels` setting is accepted for configuration compatibility but no longer restricts model access.
+AIRO applies one permission policy to every provider. The default `permissions.mode: "prompt"` gives providers workspace edit access, enables command network access when `permissions.networkAccess` is `true`, and asks before retrying a blocked action with unrestricted system access. An explicit approval elevates only that retry. Set `permissions.mode` to `"fullAccess"` to run every provider without sandbox or permission prompts; use that only in an environment you fully trust. Run `airo setup` to choose the global policy.
+
+Claude runs use `permissionMode: "acceptEdits"` inside prompt mode so headless implementation tasks can edit the working tree. Change it to `auto`, `manual`, `dontAsk`, or `plan` for a more restrictive Claude-specific baseline. Full-access mode overrides it with Claude's `bypassPermissions` mode. The legacy `allowedModels` setting is accepted for configuration compatibility but no longer restricts model access.
 
 ## Troubleshooting
 
@@ -306,6 +308,7 @@ Claude runs use `permissionMode: "acceptEdits"` by default so headless implement
 | The comparison default is missing | Run `airo setup` and enter the provider's usual model when prompted, or set that provider's `defaultModel` in AIRO configuration. This only affects `airo usage` comparisons. |
 | Node will not run AIRO | Check `node --version`; AIRO requires Node.js 22 or newer. Upgrade Node, reinstall AIRO, and run `airo doctor` again. |
 | Claude asks for permission or cannot edit | Review the Claude `permissionMode` in AIRO configuration. The default is `acceptEdits`; choose `manual` or `plan` when you want stricter control. |
+| A provider cannot access GitHub or another network service | Run `airo setup` and enable command network access in prompt mode, or set `permissions.networkAccess` to `true`. Use `permissions.mode: "fullAccess"` only when you intend to remove provider sandboxing and approval prompts globally. |
 
 ## CLI command reference
 

@@ -32,6 +32,7 @@ test("loads and deeply merges project configuration", () => {
         claude: { models: { fast: { model: "custom-haiku" } } },
         history: { enabled: false },
         logging: { level: "compact" },
+        permissions: { networkAccess: false },
         rules: "invalid",
       }),
     );
@@ -41,6 +42,8 @@ test("loads and deeply merges project configuration", () => {
     assert.equal(loaded.config.claude.models.fast.model, "custom-haiku");
     assert.equal(loaded.config.claude.models.deep.model, DEFAULT_CONFIG.claude.models.deep.model);
     assert.equal(loaded.config.history.enabled, false);
+    assert.equal(loaded.config.permissions.mode, "prompt");
+    assert.equal(loaded.config.permissions.networkAccess, false);
     assert.deepEqual(loaded.config.rules, []);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

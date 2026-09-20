@@ -134,6 +134,8 @@ class SidebarProvider {
         }
         else if (message.type === "newTab")
             await this.newTab();
+        else if (message.type === "closeTab" && message.chatId)
+            this.closeTab(message.chatId);
         else if (message.type === "openSession" && message.sessionId)
             await this.openSessionTab(message.sessionId);
         else if (message.type === "switchTab" && message.chatId)
@@ -488,6 +490,32 @@ class SidebarProvider {
             return;
         this.saveActiveChat();
         this.activateChat(chat);
+    }
+    closeTab(chatId) {
+        const chat = this.sidebarChats.get(chatId);
+        if (!chat)
+            return;
+        if (chatId === this.activeChatId && this.running) {
+            this.notice("Stop the current run before closing this chat.");
+            return;
+        }
+        const chatIds = [...this.sidebarChats.keys()];
+        const closedIndex = chatIds.indexOf(chatId);
+        this.sidebarChats.delete(chatId);
+        this.post({ type: "removeTab", chatId });
+        if (chatId !== this.activeChatId) {
+            this.postTabs();
+            return;
+        }
+        const nextId = chatIds[closedIndex + 1] ?? chatIds[closedIndex - 1];
+        const nextChat = nextId ? this.sidebarChats.get(nextId) : this.createChatState();
+        if (!nextChat)
+            return;
+        if (!nextId)
+            this.sidebarChats.set(nextChat.id, nextChat);
+        this.loadChat(nextChat);
+        this.postTabs();
+        this.activateChat(nextChat);
     }
     activateChat(chat) {
         this.loadChat(chat);

@@ -394,7 +394,7 @@ process.stdin.once("end", () => {
   }
 });
 
-test("passes a one-run Claude permission override and captures malformed output", async () => {
+test("elevates a Claude run after approval and captures malformed output", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-runner-permission-"));
   const command = path.join(dir, "mock-claude");
   fs.writeFileSync(
@@ -419,7 +419,7 @@ process.stderr.write("diagnostic\\n");
       headless: true,
       capture: true,
       logger,
-      permissionMode: "bypassPermissions",
+      elevated: true,
       logMeta: {
         phaseIndex: 1,
         phaseTotal: 1,
@@ -431,6 +431,38 @@ process.stderr.write("diagnostic\\n");
       },
     });
     assert.equal(run.output, "bypassPermissions");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("applies the shared Codex permission policy", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-runner-codex-permission-"));
+  const command = path.join(dir, "mock-codex");
+  fs.writeFileSync(
+    command,
+    `#!/usr/bin/env node
+process.stdout.write(JSON.stringify({type:"item.completed", item:{type:"agent_message", text:process.argv.slice(2).join(" ")}}) + "\\n");
+`,
+  );
+  fs.chmodSync(command, 0o755);
+  try {
+    const config = structuredClone(DEFAULT_CONFIG);
+    config.codex.command = command;
+    const route = routeTask("rename this type", config);
+    route.agent = "codex";
+    route.model = config.codex.models.fast.model;
+    const regular = await runAgent(route, "prompt", config, { headless: true, capture: true });
+    assert.match(regular.output, /--sandbox workspace-write/);
+    assert.match(regular.output, /sandbox_workspace_write\.network_access=true/);
+
+    const elevated = await runAgent(route, "prompt", config, {
+      headless: true,
+      capture: true,
+      elevated: true,
+    });
+    assert.match(elevated.output, /--sandbox danger-full-access/);
+    assert.doesNotMatch(elevated.output, /sandbox_workspace_write\.network_access=true/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

@@ -6,6 +6,7 @@ export type FeedbackRating = "good" | "bad";
 export type PhaseKind = "analyze" | "implement" | "test" | "review" | "recover" | "clarify";
 export type OrchestrationMode = "auto" | "adaptive" | "single";
 export type LogLevel = "compact" | "live" | "verbose";
+export type PermissionMode = "prompt" | "fullAccess";
 
 export interface Rule {
   name: string;
@@ -52,6 +53,11 @@ export interface OrchestrationConfig {
   outputTailChars: number;
 }
 
+export interface PermissionsConfig {
+  mode: PermissionMode;
+  networkAccess: boolean;
+}
+
 export interface RouterConfig {
   policy: Policy;
   defaultAgent: Agent;
@@ -59,6 +65,7 @@ export interface RouterConfig {
   codex: ProviderConfig;
   history: HistoryConfig;
   orchestration: OrchestrationConfig;
+  permissions: PermissionsConfig;
   logging: LoggingConfig;
   rules: Rule[];
 }
