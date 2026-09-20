@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { renderWebview } from "./webview";
@@ -60,6 +61,9 @@ type ProtocolEvent = {
   phaseIndex?: number;
   phaseTotal?: number;
   exitCode?: number;
+  path?: string;
+  name?: string;
+  mediaType?: string;
 };
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -248,14 +252,46 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   }
 
   private async openFile(value: string): Promise<void> {
-    if (!path.isAbsolute(value)) return;
-    const uri = vscode.Uri.file(path.normalize(value));
+    let uri: vscode.Uri;
+    try {
+      uri = value.startsWith("file://") ? vscode.Uri.parse(value, true) : vscode.Uri.file(value);
+    } catch {
+      return;
+    }
+    if (uri.scheme !== "file" || !path.isAbsolute(uri.fsPath)) return;
+    uri = vscode.Uri.file(path.normalize(uri.fsPath));
     try {
       const stat = await vscode.workspace.fs.stat(uri);
       if (stat.type & vscode.FileType.Directory) return;
       await vscode.commands.executeCommand("vscode.open", uri);
     } catch {
       this.notice("That attachment is no longer available.");
+    }
+  }
+
+  private async postArtifact(chatId: string, event: ProtocolEvent): Promise<void> {
+    if (!event.path || !path.isAbsolute(event.path)) return;
+    const file = path.normalize(event.path);
+    try {
+      const stat = await fs.promises.stat(file);
+      if (!stat.isFile()) return;
+      let dataUrl: string | undefined;
+      if (event.mediaType?.startsWith("image/") && stat.size <= 20 * 1024 * 1024) {
+        const bytes = await fs.promises.readFile(file);
+        dataUrl = `data:${event.mediaType};base64,${bytes.toString("base64")}`;
+      }
+      this.postToChat(chatId, {
+        type: "artifact",
+        name: event.name || path.basename(file),
+        path: file,
+        mediaType: event.mediaType,
+        dataUrl,
+      });
+    } catch {
+      this.notice(
+        `Generated artifact is no longer available: ${event.name || path.basename(file)}`,
+        chatId,
+      );
     }
   }
 
@@ -498,6 +534,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
       let stdoutBuffer = "";
       let stderrBuffer = "";
       let hasFinal = false;
+      const pendingArtifacts: Promise<void>[] = [];
       let started = false;
       let child: ChildProcessWithoutNullStreams;
       try {
@@ -551,6 +588,11 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
         } else if (event.type === "final" && event.text) {
           hasFinal = true;
           this.postToChat(chatId, { type: "final", text: event.text });
+        } else if (event.type === "failure" && event.text) {
+          hasFinal = true;
+          this.postToChat(chatId, { type: "failure", text: event.text });
+        } else if (event.type === "artifact" && event.path) {
+          pendingArtifacts.push(this.postArtifact(chatId, event));
         }
       };
       const handleLine = (line: string, newline: boolean): void => {
@@ -578,7 +620,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
       child.stdout.on("data", (data: Buffer) => write(data, "stdout"));
       child.stderr.on("data", (data: Buffer) => write(data, "stderr"));
       child.on("error", (error) => this.notice(`Could not start AIRO: ${error.message}`, chatId));
-      child.on("close", (code) => {
+      child.on("close", async (code) => {
         const stopped = chat.stopping;
         if (stdoutBuffer) handleLine(stdoutBuffer, false);
         if (stderrBuffer) handleLine(stderrBuffer, false);
@@ -586,6 +628,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
         chat.running = false;
         chat.stopping = false;
         chat.awaitingInput = false;
+        await Promise.allSettled(pendingArtifacts);
         this.postAllStates();
         if (!stopped && showOutput && !hasFinal && humanOutput.trim()) {
           this.postToChat(chatId, {

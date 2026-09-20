@@ -11,6 +11,7 @@ import {
   ui,
 } from "./ui.js";
 import { dataRootDir } from "./paths.js";
+import { extractLocalArtifacts } from "./artifacts.js";
 
 export interface RunLoggerOptions {
   runId: string;
@@ -77,6 +78,8 @@ export class RunLogger {
   }
 
   private prettyStatus(message: string): string {
+    if (/\b(?:phase|run)\b.*\b(?:complete|blocked)\b.*\bexit=[1-9]\d*\b/i.test(message))
+      return `${ui.gray(nowTime())} ${statusIcon("error")} ${ui.bold("airo")} ${ui.red(message)}`;
     if (message.includes(" complete"))
       return `${ui.gray(nowTime())} ${statusIcon("ok")} ${ui.bold("airo")} ${message}`;
     if (message.includes("phase ") || message.includes("started"))
@@ -216,10 +219,11 @@ export class RunLogger {
     this.console(`${statusIcon("ask")} ${ui.yellow(ui.bold(question))}`);
   }
 
-  finalOutput(output: string) {
+  finalOutput(output: string, success = true) {
     const clean = output.trim();
     if (!clean) return;
-    this.event("final", { text: clean });
+    this.event(success ? "final" : "failure", { text: clean });
+    for (const artifact of extractLocalArtifacts(clean)) this.event("artifact", { ...artifact });
     const file = path.join(this.runDir, "final-output.txt");
     if (this.persist) fs.writeFileSync(file, `${clean}\n`);
     this.append(
@@ -229,7 +233,12 @@ export class RunLogger {
 
     const width = outputWidth();
     this.console("");
-    this.console(sectionRule(`${statusIcon("ok")} Final result`, width));
+    this.console(
+      sectionRule(
+        `${statusIcon(success ? "ok" : "error")} ${success ? "Final result" : "Run failed"}`,
+        width,
+      ),
+    );
     this.console(renderTerminalMarkdown(clean, { width }));
     this.console(ui.gray("─".repeat(width)));
   }

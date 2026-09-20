@@ -78,10 +78,12 @@ test("turns concrete permission and connection failures into approval questions"
   );
 });
 
-test("only treats an explicit approve answer as permission approval", () => {
+test("accepts natural affirmative answers as permission approval", () => {
   assert.equal(isApprovalAnswer("approve"), true);
   assert.equal(isApprovalAnswer(" APPROVED "), true);
-  assert.equal(isApprovalAnswer("yes"), false);
+  assert.equal(isApprovalAnswer("yes"), true);
+  assert.equal(isApprovalAnswer("y"), true);
+  assert.equal(isApprovalAnswer("allow"), true);
   assert.equal(isApprovalAnswer("proceed manually"), false);
 });
 

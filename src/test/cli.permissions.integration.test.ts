@@ -39,7 +39,7 @@ function runCli(cwd: string, home: string, input = ""): ReturnType<typeof spawnS
   );
 }
 
-test("terminal CLI proactively asks before elevating a provider-reported access failure", () => {
+test("terminal CLI accepts yes before elevating a provider-reported access failure", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-cli-permission-"));
   const home = path.join(dir, "home");
   const count = path.join(dir, "count");
@@ -68,7 +68,7 @@ console.log(JSON.stringify({type:"turn.completed",usage:{input_tokens:2,output_t
 
   try {
     writeConfig(home, codex, "prompt");
-    const result = runCli(dir, home, "approve\n");
+    const result = runCli(dir, home, "yes\n");
     assert.equal(result.status, 0, result.stderr);
     assert.match(
       result.stdout,

@@ -148,3 +148,22 @@ test("stops after a failed phase when recovery is disabled", async () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("does not report success when a provider remains blocked after clarification retries", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-orchestrate-blocked-"));
+  const codex = executable(
+    path.join(dir, "codex"),
+    `console.log(JSON.stringify({type:"item.completed",item:{type:"agent_message",text:"AIROUTE_QUESTION: Permission required to bind the local server. Approve?"}}));`,
+  );
+  try {
+    const config = testConfig(codex, codex);
+    const result = await orchestrate("Rename a type in one file", config, {
+      askUser: async () => "decline",
+    });
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.phases.length, 1);
+    assert.equal(result.phases[0].exitCode, 1);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

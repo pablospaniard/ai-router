@@ -36,4 +36,6 @@ test("marks inspection-style single requests as read-only", () => {
   );
   assert.match(singleRunPrompt("Push the branch"), /blocked by the sandbox or permissions/);
   assert.match(singleRunPrompt("Push the branch"), /do not claim the task is complete/);
+  assert.match(singleRunPrompt("Start the app"), /start it detached in the background/);
+  assert.match(singleRunPrompt("Generate a cover"), /persist it in the project/);
 });

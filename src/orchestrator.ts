@@ -139,7 +139,7 @@ function phaseTask(originalTask: string, phasePlan: PhasePlan, prior: PhaseExecu
   const priorSummary = prior.length
     ? `\n\nPrior phase outcomes:\n${prior.map((p) => `- ${p.phase.kind}: exit=${p.exitCode}; ${tail(p.output, 1200)}`).join("\n")}`
     : "";
-  return `[adaptive phase: ${phasePlan.kind}]\nOriginal request: ${originalTask}\n\nPhase objective: ${phasePlan.instruction}${priorSummary}\n\nClarification protocol: If you cannot safely continue without a user decision, do not guess. If a required command is blocked by the sandbox or permissions, output exactly AIROUTE_QUESTION: Permission required to <describe the blocked action>. Approve? and stop; do not claim the phase is complete. For any other blocking decision, output exactly one line in the form AIROUTE_QUESTION: <your concise question> and stop. Otherwise continue normally.`;
+  return `[adaptive phase: ${phasePlan.kind}]\nOriginal request: ${originalTask}\n\nPhase objective: ${phasePlan.instruction}${priorSummary}\n\nExecution contract: Work from the current shared working tree and verify important results before claiming success. For a long-running development server, start it detached in the background, verify it responds, and report the exact local URL and process details. Only share URLs that you actually verified; clearly label localhost URLs as local-only. If you create or generate a user-visible file, persist it in the project (unless the user chose another location), verify that it exists, and link its absolute path. Render generated images with Markdown image syntax so compatible clients can preview them. In the final phase, give a self-contained user-facing handoff covering the completed work, validation, artifact paths, and any unresolved issue—not merely a phase-status report.\n\nClarification protocol: If you cannot safely continue without a user decision, do not guess. If a required command is blocked by the sandbox or permissions, output exactly AIROUTE_QUESTION: Permission required to <describe the blocked action>. Approve? and stop; do not claim the phase is complete. For any other blocking decision, output exactly one line in the form AIROUTE_QUESTION: <your concise question> and stop. Otherwise continue normally.`;
 }
 
 function tail(s: string, n: number): string {
@@ -360,6 +360,12 @@ export async function orchestrate(
       });
       usage = addTokenUsage(usage, result.usage);
     }
+    if (result.question) {
+      logger.status(
+        `${p.kind} remains blocked after ${clarificationCount} clarification attempt(s)`,
+      );
+      result = { ...result, exitCode: result.exitCode || 1 };
+    }
     const execution: PhaseExecution = {
       phase: p,
       route,
@@ -428,6 +434,8 @@ export async function orchestrate(
         }));
     }
 
+    if (result.question) break;
+
     if (
       needsRecovery(execution) &&
       config.orchestration.recoverOnFailure &&
@@ -457,7 +465,7 @@ export async function orchestrate(
   const exitCode = executions.some((e) => e.exitCode !== 0) ? 1 : 0;
   const finalExecution = [...executions].reverse().find((e) => e.output.trim().length > 0);
   logger.status(`adaptive run ${runId} complete exit=${exitCode}`);
-  if (finalExecution) logger.finalOutput(finalExecution.output);
+  if (finalExecution) logger.finalOutput(finalExecution.output, exitCode === 0);
   if (logger.persist) logger.status(`logs: ${logger.runDir}`);
   return { runId, phases: executions, exitCode };
 }

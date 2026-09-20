@@ -332,7 +332,9 @@ export function permissionFailureQuestion(text: string): string | undefined {
 }
 
 export function isApprovalAnswer(answer: string): boolean {
-  return /^(?:approve|approved)$/i.test(answer.trim());
+  return /^(?:y|yes|approve|approved|allow|allowed|confirm|confirmed|proceed)$/i.test(
+    answer.trim(),
+  );
 }
 
 export function genericProgress(event: any): ParsedProviderEvent {
