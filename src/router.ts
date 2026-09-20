@@ -183,22 +183,29 @@ export function routeTask(task: string, config: RouterConfig): RouteResult {
   if (config.policy === "codex-heavy") add(reasons, "codex", 2, "codex-heavy policy");
 
   const learned = learningHints(task, config.history);
-  if (learned.agentBoosts.claude !== 0)
-    add(reasons, "claude", learned.agentBoosts.claude, "history feedback on similar tasks");
-  if (learned.agentBoosts.codex !== 0)
-    add(reasons, "codex", learned.agentBoosts.codex, "history feedback on similar tasks");
+  const agents: Agent[] = ["claude", "codex", "gemini", "copilot"];
+  for (const candidate of agents) {
+    const boost = learned.agentBoosts[candidate];
+    if (boost !== 0) add(reasons, candidate, boost, "history feedback on similar tasks");
+  }
   modelReasons.push(...learned.notes);
 
-  const claudeScore = reasons.filter((r) => r.agent === "claude").reduce((s, r) => s + r.points, 0);
-  const codexScore = reasons.filter((r) => r.agent === "codex").reduce((s, r) => s + r.points, 0);
-  const agent =
-    explicitModel?.agent ??
-    forcedAgent ??
-    (claudeScore === codexScore
-      ? config.defaultAgent
-      : claudeScore > codexScore
-        ? "claude"
-        : "codex");
+  const scores = Object.fromEntries(
+    agents.map((candidate) => [
+      candidate,
+      reasons
+        .filter((reason) => reason.agent === candidate)
+        .reduce((sum, reason) => sum + reason.points, 0),
+    ]),
+  ) as Record<Agent, number>;
+  const claudeScore = scores.claude;
+  const codexScore = scores.codex;
+  const bestScore = Math.max(...Object.values(scores));
+  const highestScoringAgents = agents.filter((candidate) => scores[candidate] === bestScore);
+  const learnedAgent = highestScoringAgents.includes(config.defaultAgent)
+    ? config.defaultAgent
+    : highestScoringAgents[0];
+  const agent = explicitModel?.agent ?? forcedAgent ?? learnedAgent;
 
   let complexity = 2;
   if (words >= 20) complexity += 1;

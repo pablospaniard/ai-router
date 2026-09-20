@@ -61,12 +61,19 @@ function argsForRoute(
   } else if (route.agent === "gemini") {
     if (headless) args.push("--prompt", prompt);
     args.push("--model", route.model);
+    args.push(
+      "--approval-mode",
+      elevated || config.permissions.mode === "fullAccess" ? "yolo" : "default",
+    );
+    if (elevated || config.permissions.mode === "fullAccess") args.push("--skip-trust");
     if (structuredProgress && headless) args.push("--output-format", "stream-json");
   } else {
     if (headless) args.push("--prompt", prompt);
     args.push("--model", route.model);
+    if (elevated || config.permissions.mode === "fullAccess") args.push("--allow-all");
+    else if (config.permissions.networkAccess) args.push("--allow-all-urls");
     if (structuredProgress && headless) args.push("--silent");
-    args.push(prompt);
+    if (!headless) args.push(prompt);
   }
   return { args, env };
 }
@@ -84,6 +91,7 @@ function compactJson(value: unknown, max = 140): string {
 export interface ParsedProviderEvent {
   messages: Array<{ category: string; text: string }>;
   candidateOutput?: string;
+  appendCandidate?: boolean;
   finalOutput?: string;
   usage?: TokenUsage;
 }
@@ -287,6 +295,32 @@ export function extractQuestion(text: string): string | undefined {
   return blockingSignal.test(last) ? last : undefined;
 }
 
+/**
+ * Turn provider-reported sandbox and access failures into an approval prompt.
+ *
+ * Providers do not always follow the AIROUTE_QUESTION protocol after a denied
+ * tool call. Keep this deliberately limited to concrete failure language so a
+ * general discussion about permissions does not pause the run.
+ */
+export function permissionFailureQuestion(text: string): string | undefined {
+  const failure =
+    /\b(?:permission denied|operation not permitted|access denied|approval (?:is )?required|requires? (?:user )?approval|blocked by (?:the )?sandbox|sandbox (?:denied|blocked|restriction)|network access (?:is )?(?:disabled|denied|blocked|restricted))\b/i;
+  const connectionFailure =
+    /\b(?:could(?:n't| not)|cannot|can't|unable to|failed to)\b.{0,160}\b(?:access|connect|fetch|reach|retrieve)\b.{0,160}\b(?:connection error|failed to connect|network is unreachable|could not resolve host|name resolution)\b/i;
+  const reversedConnectionFailure =
+    /\b(?:connection error|failed to connect|network is unreachable|could not resolve host|name resolution)\b.{0,160}\b(?:could(?:n't| not)|cannot|can't|unable to|failed)\b/i;
+
+  if (!failure.test(text) && !connectionFailure.test(text) && !reversedConnectionFailure.test(text))
+    return undefined;
+
+  const action = /\b(?:github|gh\s+(?:api|pr|issue|repo|run))\b/i.test(text)
+    ? "access GitHub and retry the blocked action"
+    : /\b(?:network|connection|connect|resolve host|name resolution)\b/i.test(text)
+      ? "retry the blocked network action"
+      : "retry the blocked action with elevated access";
+  return `Permission required to ${action}. Approve?`;
+}
+
 export function isApprovalAnswer(answer: string): boolean {
   return /^(?:approve|approved)$/i.test(answer.trim());
 }
@@ -317,9 +351,66 @@ export function genericProgress(event: any): ParsedProviderEvent {
   };
 }
 
+export function geminiProgress(event: any): ParsedProviderEvent {
+  const messages: Array<{ category: string; text: string }> = [];
+  if (!event || typeof event !== "object") return { messages };
+
+  if (event.type === "init")
+    messages.push({
+      category: "system",
+      text: `initialized${event.model ? ` model=${event.model}` : ""}${event.session_id ? ` session=${event.session_id}` : ""}`,
+    });
+
+  const content =
+    event.type === "message" && event.role === "assistant" && typeof event.content === "string"
+      ? event.content
+      : undefined;
+  if (content) messages.push({ category: "message", text: content });
+
+  if (event.type === "tool_use")
+    messages.push({
+      category: "tool",
+      text: `${event.tool_name ?? "tool"}${event.parameters ? ` ${compactJson(event.parameters)}` : ""}`,
+    });
+  else if (event.type === "tool_result")
+    messages.push({
+      category: event.status === "error" ? "error" : "tool",
+      text:
+        event.error?.message ??
+        `${event.tool_id ?? "tool"} ${event.status ?? "completed"}${event.output ? `: ${event.output}` : ""}`,
+    });
+  else if (event.type === "error")
+    messages.push({
+      category: event.severity === "warning" ? "warning" : "error",
+      text: String(event.message ?? event.error?.message ?? compactJson(event)),
+    });
+  else if (event.type === "result")
+    messages.push({ category: "result", text: String(event.status ?? "completed") });
+
+  const stats = event.type === "result" ? event.stats : undefined;
+  const usage = stats
+    ? {
+        uncachedInputTokens: number(
+          stats.input ?? Math.max(0, number(stats.input_tokens) - number(stats.cached)),
+        ),
+        cachedInputTokens: number(stats.cached),
+        cacheWriteInputTokens: 0,
+        outputTokens: number(stats.output_tokens),
+        reasoningOutputTokens: 0,
+      }
+    : undefined;
+  return {
+    messages,
+    candidateOutput: content,
+    appendCandidate: Boolean(content && event.delta),
+    usage,
+  };
+}
+
 export function progressFor(agent: Agent, event: any): ParsedProviderEvent {
   if (agent === "claude") return claudeProgress(event);
   if (agent === "codex") return codexProgress(event);
+  if (agent === "gemini") return geminiProgress(event);
   return genericProgress(event);
 }
 
@@ -393,7 +484,10 @@ export async function runAgent(
         if (msg.category === "error") fallbackOutput += `${msg.text}\n`;
         if (!question && msg.category === "message") question = extractQuestion(msg.text);
       }
-      if (progress.candidateOutput) candidateOutput = progress.candidateOutput;
+      if (progress.candidateOutput)
+        candidateOutput = progress.appendCandidate
+          ? candidateOutput + progress.candidateOutput
+          : progress.candidateOutput;
       if (progress.finalOutput) finalOutput = progress.finalOutput;
       usage = addTokenUsage(usage, progress.usage);
       const semanticOutput = progress.finalOutput ?? progress.candidateOutput;
@@ -436,5 +530,7 @@ export async function runAgent(
   const output =
     `${(finalOutput || candidateOutput || fallbackOutput).trim()}${exitCode !== 0 && stderrOutput.trim() ? `\n${stderrOutput.trim()}` : ""}`.trim();
   if (!question) question = extractQuestion(output);
+  if (!question && config.permissions.mode === "prompt" && !options.elevated)
+    question = permissionFailureQuestion(output);
   return { exitCode, output, question, usage };
 }

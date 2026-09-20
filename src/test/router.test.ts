@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { DEFAULT_CONFIG } from "../config.js";
+import { appendHistory } from "../history.js";
 import {
   applyPhasePreference,
   needsRecovery,
@@ -123,6 +127,41 @@ test("uses the configured default agent to break score ties", () => {
   const route = routeTask(neutralTask, config({ defaultAgent: "claude" }));
 
   assert.equal(route.agent, "claude");
+});
+
+test("routes with learned feedback for Gemini and Copilot", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-router-learning-"));
+  try {
+    for (const agent of ["gemini", "copilot"] as const) {
+      const current = config();
+      current.history.path = path.join(dir, `${agent}.jsonl`);
+      appendHistory(current.history, {
+        id: agent,
+        timestamp: "2026-01-01T00:00:00.000Z",
+        cwd: "/repo",
+        task: `repair ${agent} parser`,
+        agent,
+        modelTier: "fast",
+        model: current[agent].models.fast.model,
+        effort: "low",
+        complexity: 1,
+        exitCode: 0,
+        durationMs: 1,
+        feedback: "good",
+      });
+
+      const route = routeTask(`repair ${agent} parser`, current);
+      assert.equal(route.agent, agent);
+      assert.ok(
+        route.reasons.some(
+          (reason) =>
+            reason.agent === agent && reason.reason === "history feedback on similar tasks",
+        ),
+      );
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("orchestrates review, complex, and long requests in auto mode", () => {

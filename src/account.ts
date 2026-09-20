@@ -53,6 +53,8 @@ export function detectDefaultModels(
   return {
     claude: config.claude.defaultModel || process.env.ANTHROPIC_MODEL || claudeSettingsModel(cwd),
     codex: config.codex.defaultModel || readTomlModel(path.join(codexHome, "config.toml")),
+    gemini: config.gemini.defaultModel,
+    copilot: config.copilot.defaultModel,
   };
 }
 

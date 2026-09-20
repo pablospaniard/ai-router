@@ -10,10 +10,14 @@ test("explicit AIRO default-model overrides are deterministic", () => {
   const config = structuredClone(DEFAULT_CONFIG);
   config.claude.defaultModel = "fable";
   config.codex.defaultModel = "gpt-default";
+  config.gemini.defaultModel = "gemini-default";
+  config.copilot.defaultModel = "copilot-default";
 
   assert.deepEqual(detectDefaultModels(config, "/missing"), {
     claude: "fable",
     codex: "gpt-default",
+    gemini: "gemini-default",
+    copilot: "copilot-default",
   });
 });
 
@@ -56,6 +60,8 @@ test("detects layered provider defaults and authenticated accounts", () => {
     assert.deepEqual(detectDefaultModels(config, repo), {
       claude: "local-model",
       codex: "codex-model",
+      gemini: undefined,
+      copilot: undefined,
     });
     const accounts = inspectAccounts(config, repo);
     assert.deepEqual(
