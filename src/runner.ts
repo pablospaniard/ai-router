@@ -314,12 +314,23 @@ export function permissionFailureQuestion(text: string): string | undefined {
     /\b(?:connection error|failed to connect|network is unreachable|could not resolve host|name resolution)\b.{0,160}\b(?:could(?:n't| not)|cannot|can't|unable to|failed)\b/i;
   const githubConnectionFailure =
     /\b(?:cannot|can't|unable to|failed to)\s+connect\s+to\s+(?:api\.)?github\.com\b/i;
+  // On macOS, a workspace-write Codex sandbox may be unable to read the
+  // credential stored in Keychain. `gh auth status` reports that as an invalid
+  // token even though the same credential works outside the sandbox. Treat the
+  // first occurrence as an access failure so AIRO can offer a one-run elevated
+  // retry instead of repeatedly asking the user to sign in again.
+  const githubCredentialFailure =
+    /\b(?:(?:github|gh)(?:\s+cli)?\s+(?:authentication|auth|token)|(?:configured|active)\s+(?:github\s+)?token)\b.{0,120}\b(?:invalid|expired|unavailable|unreadable|failed)\b/i;
+  const directPermissionRequest =
+    /\b(?:command|operation|tool|sandbox|access)\b.{0,120}\b(?:needs?|requires?|requests?)\b.{0,40}\b(?:your\s+)?(?:approval|permission|authori[sz]ation)\b/i;
 
   if (
     !failure.test(text) &&
     !connectionFailure.test(text) &&
     !reversedConnectionFailure.test(text) &&
-    !githubConnectionFailure.test(text)
+    !githubConnectionFailure.test(text) &&
+    !githubCredentialFailure.test(text) &&
+    !directPermissionRequest.test(text)
   )
     return undefined;
 
@@ -332,7 +343,14 @@ export function permissionFailureQuestion(text: string): string | undefined {
 }
 
 export function isApprovalAnswer(answer: string): boolean {
-  return /^(?:approve|approved)$/i.test(answer.trim());
+  return /^(?:y|yes|approve|approved|allow|allowed|confirm|confirmed|proceed)$/i.test(
+    answer.trim(),
+  );
+}
+
+/** Only permission prompts may turn a natural affirmative into an elevated retry. */
+export function isPermissionApproval(question: string, answer: string): boolean {
+  return isApprovalAnswer(answer) && /^Permission required to\b/i.test(question.trim());
 }
 
 export function genericProgress(event: any): ParsedProviderEvent {

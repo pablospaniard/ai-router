@@ -15,6 +15,7 @@ import {
   extractQuestion,
   geminiProgress,
   isApprovalAnswer,
+  isPermissionApproval,
   isUsageLimitError,
   permissionFailureQuestion,
   progressFor,
@@ -73,16 +74,40 @@ test("turns concrete permission and connection failures into approval questions"
     "Permission required to access GitHub and retry the blocked action. Approve?",
   );
   assert.equal(
+    permissionFailureQuestion(
+      "GitHub authentication is still invalid. Please re-authenticate `gh` with `gh auth login -h github.com`, then retry?",
+    ),
+    "Permission required to access GitHub and retry the blocked action. Approve?",
+  );
+  assert.equal(
+    permissionFailureQuestion(
+      "The command needs your approval. Could you approve permission to continue?",
+    ),
+    "Permission required to retry the blocked action with elevated access. Approve?",
+  );
+  assert.equal(
     permissionFailureQuestion("The review completed. Permission handling looks correct."),
     undefined,
   );
 });
 
-test("only treats an explicit approve answer as permission approval", () => {
+test("accepts natural affirmative answers as permission approval", () => {
   assert.equal(isApprovalAnswer("approve"), true);
   assert.equal(isApprovalAnswer(" APPROVED "), true);
-  assert.equal(isApprovalAnswer("yes"), false);
+  assert.equal(isApprovalAnswer("yes"), true);
+  assert.equal(isApprovalAnswer("y"), true);
+  assert.equal(isApprovalAnswer("allow"), true);
   assert.equal(isApprovalAnswer("proceed manually"), false);
+});
+
+test("only elevates natural affirmative answers to permission questions", () => {
+  assert.equal(isPermissionApproval("Permission required to access GitHub. Approve?", "yes"), true);
+  assert.equal(
+    isPermissionApproval("The command needs your approval before it can continue.", "yes"),
+    false,
+  );
+  assert.equal(isPermissionApproval("Should I use PostgreSQL?", "yes"), false);
+  assert.equal(isPermissionApproval("Proceed with the proposed design?", "proceed"), false);
 });
 
 test("parses Claude lifecycle, tool, retry, result, and usage events", () => {

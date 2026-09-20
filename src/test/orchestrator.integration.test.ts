@@ -29,6 +29,27 @@ test("runs a dry adaptive plan without invoking providers", async () => {
   assert.deepEqual(result.phases, []);
 });
 
+test("includes durable process guidance in adaptive phase prompts", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-orchestrate-process-"));
+  const promptLog = path.join(dir, "prompt");
+  const provider = executable(
+    path.join(dir, "provider"),
+    `require("node:fs").writeFileSync(${JSON.stringify(promptLog)}, process.argv.at(-1));
+console.log(JSON.stringify({type:"result", subtype:"success", result:"done"}));`,
+  );
+  try {
+    const config = testConfig(provider, provider);
+    config.orchestration.maxPhases = 1;
+    await orchestrate("Start the dev server and leave it running", config);
+
+    const prompt = fs.readFileSync(promptLog, "utf8");
+    assert.match(prompt, /tool-managed command session/);
+    assert.match(prompt, /tool session ID is not evidence/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("routes each follow-up from the current prompt instead of persisted session models", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-orchestrate-routing-"));
   const provider = executable(
@@ -107,6 +128,45 @@ console.log(JSON.stringify({type:"result", subtype:"success", result, usage:{inp
   }
 });
 
+test("does not elevate an affirmative answer to an ordinary clarification", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-orchestrate-clarification-"));
+  const count = path.join(dir, "count");
+  const argsLog = path.join(dir, "args");
+  const claude = executable(
+    path.join(dir, "claude"),
+    `
+const fs = require("node:fs");
+const countFile = ${JSON.stringify(count)};
+const argsFile = ${JSON.stringify(argsLog)};
+const n = fs.existsSync(countFile) ? Number(fs.readFileSync(countFile, "utf8")) : 0;
+fs.writeFileSync(countFile, String(n + 1));
+fs.appendFileSync(argsFile, JSON.stringify(process.argv.slice(2)) + "\\n");
+const result = n === 0 ? "AIROUTE_QUESTION: Should I use PostgreSQL?" : "Review completed.";
+console.log(JSON.stringify({type:"result", subtype:"success", result}));
+`,
+  );
+  const codex = executable(
+    path.join(dir, "codex"),
+    `console.log(JSON.stringify({type:"item.completed",item:{type:"agent_message",text:"done"}}));`,
+  );
+  try {
+    const result = await orchestrate("Review this pull request", testConfig(claude, codex), {
+      askUser: async () => "yes",
+    });
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.phases[0].output, "Review completed.");
+    const invocations = fs
+      .readFileSync(argsLog, "utf8")
+      .trim()
+      .split("\n")
+      .map((line: string) => JSON.parse(line) as string[]);
+    assert.equal(invocations.length, 2);
+    assert.ok(invocations.every((args: string[]) => !args.includes("bypassPermissions")));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("inserts recovery after an unresolved phase and falls back to an available provider", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-orchestrate-recover-"));
   const count = path.join(dir, "count");
@@ -144,6 +204,25 @@ test("stops after a failed phase when recovery is disabled", async () => {
     const result = await orchestrate("Rename a type in one file", config);
     assert.equal(result.exitCode, 1);
     assert.equal(result.phases.length, 1);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("does not report success when a provider remains blocked after clarification retries", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-orchestrate-blocked-"));
+  const codex = executable(
+    path.join(dir, "codex"),
+    `console.log(JSON.stringify({type:"item.completed",item:{type:"agent_message",text:"AIROUTE_QUESTION: Permission required to bind the local server. Approve?"}}));`,
+  );
+  try {
+    const config = testConfig(codex, codex);
+    const result = await orchestrate("Rename a type in one file", config, {
+      askUser: async () => "decline",
+    });
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.phases.length, 1);
+    assert.equal(result.phases[0].exitCode, 1);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

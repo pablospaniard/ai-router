@@ -6,11 +6,18 @@ import test from "node:test";
 import {
   findRunLogs,
   followFile,
+  formatLocalTime,
   logsRoot,
   recentRunDirs,
   RunLogger,
   type PhaseLogMeta,
 } from "../logging.js";
+
+test("formats activity timestamps in the machine's local time", () => {
+  const localDate = new Date(2026, 8, 20, 18, 30, 5);
+
+  assert.equal(formatLocalTime(localDate), "18:30:05");
+});
 
 const meta: PhaseLogMeta = {
   phaseIndex: 1,
@@ -25,9 +32,11 @@ const meta: PhaseLogMeta = {
 test("persists and renders every run-log event category", () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "airo-logging-"));
   const previousHome = process.env.HOME;
+  const previousStreamProtocol = process.env.AIRO_STREAM_PROTOCOL;
   const originalWrite = process.stdout.write;
   let terminal = "";
   process.env.HOME = home;
+  process.env.AIRO_STREAM_PROTOCOL = "1";
   process.stdout.write = ((chunk: any) => {
     terminal += String(chunk);
     return true;
@@ -64,6 +73,7 @@ test("persists and renders every run-log event category", () => {
 
     assert.match(terminal, /run started/);
     assert.match(terminal, /Input needed/);
+    assert.match(terminal, /"sessionId":"session\/name"/);
     assert.ok(fs.existsSync(logger.combinedPath));
     assert.match(fs.readFileSync(logger.phaseFile(meta), "utf8"), /stderr two/);
     assert.match(fs.readFileSync(logger.eventsFile(meta), "utf8"), /event/);
@@ -83,6 +93,8 @@ test("persists and renders every run-log event category", () => {
     process.stdout.write = originalWrite;
     if (previousHome === undefined) delete process.env.HOME;
     else process.env.HOME = previousHome;
+    if (previousStreamProtocol === undefined) delete process.env.AIRO_STREAM_PROTOCOL;
+    else process.env.AIRO_STREAM_PROTOCOL = previousStreamProtocol;
     fs.rmSync(home, { recursive: true, force: true });
   }
 });

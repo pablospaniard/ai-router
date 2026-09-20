@@ -36,6 +36,16 @@ request → route → analyze → implement → test → review
   <img src="docs/airo-features.png" alt="AIRO routes a task through adaptive phases, parallel chats, VS Code, and token-aware routing" width="960">
 </p>
 
+## Decision routing in practice
+
+<p align="center">
+  <img src="docs/airo-routing-examples.svg" alt="AIRO routing Model A, Model B, and Model C through a parallel fork, a feedback loop, and a short path" width="100%">
+</p>
+
+AIRO makes a new routing decision for every phase, not just the job as a whole. A production fix can split into parallel investigations and rejoin for a patch, while a new capability can loop back through another build pass when review changes the task.
+
+That means one job can be served by multiple models and providers, and another run can use a different order—or skip phases entirely—when the task calls for it. Model A, Model B, and Model C are illustrative abstractions, not fixed roles or providers; model selection is configurable around what is available to your account.
+
 ### Built for the way agent work actually happens
 
 - **Seamless local integration.** Keep using the Claude Code and Codex CLI accounts you already have. AIRO runs in your repository, keeps the shared working tree, and needs no proxy, copied API keys, or separate hosted workspace.
@@ -68,7 +78,7 @@ request → route → analyze → implement → test → review
 
 ### VS Code sidebar (preview)
 
-The repository includes a VS Code extension in [`vscode-extension`](vscode-extension). Run `pnpm install` from the repository root, open the extension folder in VS Code, then press `F5` to launch an Extension Development Host. Its secondary-sidebar view is a stateful AIRO chat with visual workflow phases, provider-colored activity, attachments, and controls for models, accounts, usage, logs, diagnostics, and feedback. Use **New chat** to open an independent editor chat while another one runs; use **Previous chats** to restore or switch to saved chats, with active work clearly marked. Configure the executable, routing mode, provider, tier, and output detail under VS Code’s **AIRO** extension settings.
+The repository includes a VS Code extension in [`vscode-extension`](vscode-extension). Run `pnpm install` from the repository root, open the extension folder in VS Code, then press `F5` to launch an Extension Development Host. Its secondary-sidebar view is a stateful AIRO chat with visual workflow phases, provider-colored activity, attachments, inline previews for generated images, and controls for models, accounts, usage, logs, diagnostics, and feedback. Generated local files are exposed as clickable artifacts, including paths outside the current workspace. Use **New chat** to open an independent editor chat while another one runs; use **Previous chats** to restore or switch to saved chats, with active work clearly marked. Configure the executable, routing mode, provider, tier, and output detail under VS Code’s **AIRO** extension settings.
 
 The extension invokes the AIRO CLI, so `airo-cli` must be installed (or the repository must be linked locally) in addition to any provider CLI. Provider CLIs do not need to be installed in a standard location, but every executable must be reachable either through `PATH` or an explicit command path. If VS Code cannot find `airo`, set **AIRO: Command** to the absolute path of the AIRO executable, such as `/Users/me/.local/bin/airo` or `/opt/homebrew/bin/airo`. The same setting is used by the sidebar and the **AIRO: Open Terminal** command.
 
@@ -324,7 +334,7 @@ This creates `.airo.json` in the current directory. Project configuration takes 
 
 On the first command after upgrading, AIRO copies legacy global configuration and data into `~/.config/airo/` and `~/.local/share/airo/`. The old files remain untouched as a rollback path. Project-level `.ai-router.json` files continue to be discovered.
 
-AIRO applies one permission policy to every provider. The default `permissions.mode: "prompt"` gives providers workspace edit access, enables command network access when `permissions.networkAccess` is `true`, and asks before retrying a blocked action with unrestricted system access. An explicit approval elevates only that retry. Set `permissions.mode` to `"fullAccess"` to run every provider without sandbox or permission prompts; use that only in an environment you fully trust. Run `airo setup` to choose the global policy.
+AIRO applies one permission policy to every provider. The default `permissions.mode: "prompt"` gives providers workspace edit access, enables command network access when `permissions.networkAccess` is `true`, and asks before retrying a blocked action with unrestricted system access. Reply `yes`, `approve`, or use the sidebar's **Approve** button to elevate only that retry. Set `permissions.mode` to `"fullAccess"` to run every provider without sandbox or permission prompts; use that only in an environment you fully trust. Run `airo setup` to choose the global policy.
 
 Claude runs use `permissionMode: "acceptEdits"` inside prompt mode so headless implementation tasks can edit the working tree. Change it to `auto`, `manual`, `dontAsk`, or `plan` for a more restrictive Claude-specific baseline. Full-access mode overrides it with Claude's `bypassPermissions` mode. The legacy `allowedModels` setting is accepted for configuration compatibility but no longer restricts model access.
 
@@ -334,6 +344,8 @@ Claude runs use `permissionMode: "acceptEdits"` inside prompt mode so headless i
 | --- | --- |
 | AIRO says a provider is unavailable | Run `airo doctor`. Install the missing `claude` or `codex` CLI, put it on `PATH`, or set `claude.command`/`codex.command` to its absolute path in AIRO configuration, then sign in with that CLI. |
 | The VS Code sidebar cannot start AIRO | Install or link `airo-cli`, then set **AIRO: Command** to the absolute `airo` executable path if `airo` is not on VS Code’s `PATH`. |
+| A dev server cannot bind to localhost | Approve AIRO's permission prompt with `yes`, `approve`, or the sidebar's **Approve** button. AIRO retries that continuation with elevated access and requires the agent to verify the local URL before reporting it. |
+| A generated image is missing | Ask the agent to generate it again. AIRO requires generated files to be persisted and verified, and the VS Code sidebar previews existing image artifacts inline. |
 | AIRO cannot tell whether I am signed in | Run `airo account`, then sign in or refresh the login using the provider's own CLI. Provider CLIs may not reveal an email address or subscription name; that is expected. |
 | My model is rejected | Confirm the model is available to your current provider subscription, then run it with `--agent claude` or `--agent codex` and `--model <model>`. Use `airo setup` to update automatic tier defaults. |
 | The comparison default is missing | Run `airo setup` and enter the provider's usual model when prompted, or set that provider's `defaultModel` in AIRO configuration. This only affects `airo usage` comparisons. |

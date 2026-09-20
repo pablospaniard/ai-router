@@ -38,7 +38,7 @@ import {
   addTokenUsage,
   commandExists,
   commandVersion,
-  isApprovalAnswer,
+  isPermissionApproval,
   isUsageLimitError,
   runAgent,
 } from "./runner.js";
@@ -403,7 +403,7 @@ async function singleRun(
     clarificationCount++;
     logger.question(result.question);
     const answer = await askUser(result.question);
-    const elevated = isApprovalAnswer(answer);
+    const elevated = isPermissionApproval(result.question, answer);
     logger.status(
       elevated
         ? "approval received → resuming single phase with elevated permissions"
@@ -419,9 +419,15 @@ async function singleRun(
     });
     usage = addTokenUsage(usage, result.usage);
   }
+  if (result.question) {
+    logger.status(
+      `single phase remains blocked after ${clarificationCount} clarification attempt(s)`,
+    );
+    result = { ...result, exitCode: result.exitCode || 1 };
+  }
   const durationMs = Date.now() - started;
   logger.phaseEnd(logMeta, result.exitCode, durationMs);
-  logger.finalOutput(result.output);
+  logger.finalOutput(result.output, result.exitCode === 0);
   if (logger.persist) logger.status(`logs: ${logger.runDir}`);
   const assessment = evaluateRoute(result.output, result.exitCode, undefined, {
     retries: clarificationCount,

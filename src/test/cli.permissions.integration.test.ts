@@ -39,7 +39,7 @@ function runCli(cwd: string, home: string, input = ""): ReturnType<typeof spawnS
   );
 }
 
-test("terminal CLI proactively asks before elevating a provider-reported access failure", () => {
+test("terminal CLI accepts yes before elevating a provider-reported access failure", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-cli-permission-"));
   const home = path.join(dir, "home");
   const count = path.join(dir, "count");
@@ -68,7 +68,7 @@ console.log(JSON.stringify({type:"turn.completed",usage:{input_tokens:2,output_t
 
   try {
     writeConfig(home, codex, "prompt");
-    const result = runCli(dir, home, "approve\n");
+    const result = runCli(dir, home, "yes\n");
     assert.equal(result.status, 0, result.stderr);
     assert.match(
       result.stdout,
@@ -87,6 +87,50 @@ console.log(JSON.stringify({type:"turn.completed",usage:{input_tokens:2,output_t
     assert.match(invocations[0], /--ask-for-approval never/);
     assert.match(invocations[1], /--sandbox danger-full-access/);
     assert.match(invocations[1], /--ask-for-approval never/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("terminal CLI does not elevate yes for an ordinary clarification", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-cli-clarification-"));
+  const home = path.join(dir, "home");
+  const count = path.join(dir, "count");
+  const argsLog = path.join(dir, "args");
+  const codex = executable(
+    path.join(dir, "codex"),
+    `
+const fs = require("node:fs");
+const countFile = ${JSON.stringify(count)};
+const argsFile = ${JSON.stringify(argsLog)};
+const args = process.argv.slice(2);
+if (!args.includes("exec")) {
+  console.log(args.includes("--version") ? "codex-cli 1.0.0" : "Logged in using ChatGPT");
+  process.exit(0);
+}
+const n = fs.existsSync(countFile) ? Number(fs.readFileSync(countFile, "utf8")) : 0;
+fs.writeFileSync(countFile, String(n + 1));
+fs.appendFileSync(argsFile, JSON.stringify(args) + "\\n");
+const text = n === 0 ? "AIROUTE_QUESTION: Should I use PostgreSQL?" : "Task completed.";
+console.log(JSON.stringify({type:"item.completed",item:{type:"agent_message",text}}));
+console.log(JSON.stringify({type:"turn.completed",usage:{input_tokens:2,output_tokens:1}}));
+`,
+  );
+
+  try {
+    writeConfig(home, codex, "prompt");
+    const result = runCli(dir, home, "yes\n");
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /input received.*resuming single phase/);
+    assert.doesNotMatch(result.stdout, /elevated permissions/);
+    const invocations = fs
+      .readFileSync(argsLog, "utf8")
+      .trim()
+      .split("\n")
+      .map((line: string) => JSON.parse(line) as string[]);
+    assert.equal(invocations.length, 2);
+    assert.ok(invocations.every((args: string[]) => args.includes("workspace-write")));
+    assert.ok(invocations.every((args: string[]) => !args.includes("danger-full-access")));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
