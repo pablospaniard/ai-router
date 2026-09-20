@@ -29,6 +29,44 @@ test("runs a dry adaptive plan without invoking providers", async () => {
   assert.deepEqual(result.phases, []);
 });
 
+test("routes each follow-up from the current prompt instead of persisted session models", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-orchestrate-routing-"));
+  const provider = executable(
+    path.join(dir, "provider"),
+    `console.log(JSON.stringify({type:"result", subtype:"success", result:"done"}));`,
+  );
+  try {
+    const result = await orchestrate(
+      "switch to Claude Opus model and review this PR",
+      testConfig(provider, provider),
+      {
+        session: {
+          sessionId: "routing-session",
+          cwd: dir,
+          createdAt: new Date(0).toISOString(),
+          updatedAt: new Date(0).toISOString(),
+          originalTask: "Use Codex",
+          turns: [
+            {
+              turnId: "old-turn",
+              runId: "old-run",
+              timestamp: new Date(0).toISOString(),
+              userPrompt: "fix all, use gpt-5.6-sol model",
+              routeSummary: "single:codex/gpt-5.6-sol exit=0",
+              phaseSummaries: ["single:codex/gpt-5.6-sol exit=0"],
+            },
+          ],
+        },
+      },
+    );
+    assert.equal(result.phases[0].route.agent, "claude");
+    assert.equal(result.phases[0].route.model, DEFAULT_CONFIG.claude.models.deep.model);
+    assert.equal(result.phases[0].route.modelTier, "deep");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("resumes the same Claude review with elevated permissions after approve", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-orchestrate-approve-"));
   const count = path.join(dir, "count");

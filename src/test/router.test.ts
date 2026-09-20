@@ -6,12 +6,20 @@ import test from "node:test";
 import { DEFAULT_CONFIG } from "../config.js";
 import { appendHistory } from "../history.js";
 import {
+  applyRouteOverrides,
   applyPhasePreference,
   needsRecovery,
   planPhases,
   shouldOrchestrate,
 } from "../orchestrator.js";
-import { agentForModel, requestedModel, requestedModelTier, routeTask } from "../router.js";
+import {
+  agentForModel,
+  requestedModel,
+  requestedModelTier,
+  routeTask,
+  routingClarification,
+  userRoutingRequest,
+} from "../router.js";
 import type { RouterConfig } from "../types.js";
 
 function config(overrides: Partial<RouterConfig> = {}): RouterConfig {
@@ -74,6 +82,63 @@ test("routes explicit models outside the automatic tier defaults", () => {
   assert.equal(codex.userRequestedModel, "gpt-6-astra");
   assert.equal(claude.agent, "claude");
   assert.equal(claude.model, "claude-opus-5");
+});
+
+test("understands human-style provider, model, and tier overrides", () => {
+  const current = config();
+  const opus = routeTask("switch to use Claude Opus model, then review the PR", current);
+  const gemini = routeTask("go with Gemini on the fast tier for this", current);
+  const codex = routeTask("please run it with Codex deep", current);
+
+  assert.equal(opus.agent, "claude");
+  assert.equal(opus.modelTier, "deep");
+  assert.equal(opus.model, current.claude.models.deep.model);
+  assert.equal(gemini.agent, "gemini");
+  assert.equal(gemini.modelTier, "fast");
+  assert.equal(gemini.model, current.gemini.models.fast.model);
+  assert.equal(codex.agent, "codex");
+  assert.equal(codex.modelTier, "deep");
+  assert.equal(codex.model, current.codex.models.deep.model);
+});
+
+test("uses the newest routing instruction and ignores stale session choices", () => {
+  const current = config();
+  const request = userRoutingRequest(
+    "Earlier request: fix all, use gpt-5.6-sol model\nCurrent follow-up: switch to Claude Opus model",
+    current,
+  );
+
+  assert.equal(request.agent, "claude");
+  assert.equal(request.model, current.claude.models.deep.model);
+  assert.equal(request.tier, "deep");
+});
+
+test("asks for clarification when a routing instruction cannot be resolved", () => {
+  const current = config();
+  assert.match(routingClarification("use the banana model for this", current) ?? "", /banana/);
+  assert.match(routingClarification("switch to Grok", current) ?? "", /Grok/i);
+  assert.equal(routingClarification("switch to the main branch", current), undefined);
+  assert.equal(routingClarification("use automatic routing for this review", current), undefined);
+});
+
+test("preserves human provider overrides through phase preferences", () => {
+  const current = config();
+  const base = routeTask("use Gemini to review this PR", current);
+  const phaseRoute = applyPhasePreference(base, planPhases("review this PR", current)[0], current);
+  assert.equal(phaseRoute.agent, "gemini");
+});
+
+test("applies explicit adaptive CLI overrides after phase preferences", () => {
+  const current = config();
+  const base = applyPhasePreference(
+    routeTask("review this PR", current),
+    planPhases("review this PR", current)[0],
+    current,
+  );
+  const overridden = applyRouteOverrides(base, { agent: "codex", tier: "deep" }, current);
+  assert.equal(overridden.agent, "codex");
+  assert.equal(overridden.modelTier, "deep");
+  assert.equal(overridden.model, current.codex.models.deep.model);
 });
 
 test("preserves an explicit model through adaptive phase preferences", () => {

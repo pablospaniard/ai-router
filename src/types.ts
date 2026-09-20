@@ -81,6 +81,7 @@ export interface ScoreReason {
 export interface RouteResult {
   agent: Agent;
   modelTier: ModelTier;
+  userRequestedAgent?: Agent;
   userRequestedTier?: ModelTier;
   userRequestedModel?: string;
   model: string;

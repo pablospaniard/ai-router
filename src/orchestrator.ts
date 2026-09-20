@@ -152,7 +152,7 @@ export function applyPhasePreference(
   config: RouterConfig,
 ): RouteResult {
   const route = { ...base, reasons: [...base.reasons], modelReasons: [...base.modelReasons] };
-  if (p.preferredAgent && !route.userRequestedModel) {
+  if (p.preferredAgent && !route.userRequestedAgent && !route.userRequestedModel) {
     route.agent = p.preferredAgent;
     route.reasons.push({
       agent: p.preferredAgent,
@@ -169,6 +169,32 @@ export function applyPhasePreference(
       ? (profile.effort ?? route.effort)
       : (p.preferredEffort ?? profile.effort ?? route.effort);
   route.modelReasons.push(`phase ${p.kind} → ${route.agent}/${route.modelTier}`);
+  return route;
+}
+
+export interface RouteOverrides {
+  agent?: Agent;
+  tier?: ModelTier;
+  model?: string;
+  effort?: Effort;
+}
+
+export function applyRouteOverrides(
+  base: RouteResult,
+  overrides: RouteOverrides,
+  config: RouterConfig,
+): RouteResult {
+  const route = { ...base, reasons: [...base.reasons], modelReasons: [...base.modelReasons] };
+  if (!overrides.agent && !overrides.tier && !overrides.model && !overrides.effort) return route;
+  if (overrides.agent) route.agent = overrides.agent;
+  if (overrides.tier) route.modelTier = overrides.tier;
+  const profile = config[route.agent].models[route.modelTier];
+  if (overrides.agent || overrides.tier) route.model = profile.model;
+  if (overrides.model) route.model = overrides.model;
+  if (overrides.agent || overrides.tier) route.effort = profile.effort ?? route.effort;
+  if (overrides.effort) route.effort = overrides.effort;
+  if (overrides.agent || overrides.tier || overrides.model)
+    route.modelReasons.push(`explicit flags → ${route.agent}/${route.model} (${route.modelTier})`);
   return route;
 }
 
@@ -210,6 +236,7 @@ export async function orchestrate(
     session?: SessionState;
     logLevel?: LogLevel;
     askUser?: (question: string) => Promise<string>;
+    routeOverrides?: RouteOverrides;
   } = {},
 ): Promise<{ runId: string; phases: PhaseExecution[]; exitCode: number }> {
   const runId = newRunId();
@@ -231,11 +258,8 @@ export async function orchestrate(
     );
     for (let i = 0; i < plans.length; i++) {
       const p = plans[i];
-      let route = applyPhasePreference(
-        routeTask(phaseTask(routedTask, p, executions), config),
-        p,
-        config,
-      );
+      let route = applyPhasePreference(routeTask(task, config), p, config);
+      route = applyRouteOverrides(route, options.routeOverrides ?? {}, config);
       console.log(
         `  ${ui.gray(String(i + 1).padStart(2) + ".")} ${ui.bold(p.kind.padEnd(9))} ${ui.cyan("→")} ${agentColor(route.agent, route.agent)}${ui.gray("/")}${ui.cyan(route.model)} ${ui.gray("effort=")}${ui.magenta(route.effort)} ${ui.gray("tier=")}${tierColor(route.modelTier)} ${ui.gray("—")} ${p.title}`,
       );
@@ -249,7 +273,8 @@ export async function orchestrate(
   for (let i = 0; i < plans.length && i < config.orchestration.maxPhases; i++) {
     const p = plans[i];
     const prompt = phaseTask(routedTask, p, executions);
-    let route = applyPhasePreference(routeTask(prompt, config), p, config);
+    let route = applyPhasePreference(routeTask(task, config), p, config);
+    route = applyRouteOverrides(route, options.routeOverrides ?? {}, config);
     route = fallbackIfMissing(route, config);
 
     const logMeta = {
