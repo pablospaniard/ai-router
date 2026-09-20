@@ -73,6 +73,12 @@ test("turns concrete permission and connection failures into approval questions"
     "Permission required to access GitHub and retry the blocked action. Approve?",
   );
   assert.equal(
+    permissionFailureQuestion(
+      "GitHub authentication is still invalid. Please re-authenticate `gh` with `gh auth login -h github.com`, then retry?",
+    ),
+    "Permission required to access GitHub and retry the blocked action. Approve?",
+  );
+  assert.equal(
     permissionFailureQuestion("The review completed. Permission handling looks correct."),
     undefined,
   );
