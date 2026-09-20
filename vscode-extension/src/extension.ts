@@ -322,8 +322,9 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   private async slash(input: string, chatId = this.activeChatId): Promise<void> {
     const [command, ...parts] = input.split(/\s+/);
     const argument = parts.join(" ");
+    const chat = this.sidebarChats.get(chatId);
     const commands: Record<string, string[]> = {
-      "/status": ["session"],
+      "/status": ["session", ...(chat?.session ? [chat.session.sessionId] : [])],
       "/sessions": ["sessions"],
       "/models": ["models"],
       "/account": ["account"],
@@ -592,6 +593,10 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
               turnCount: 0,
             };
             chat.activeSession = true;
+            if (chatId === this.activeChatId) {
+              this.session = chat.session;
+              this.activeSession = true;
+            }
           }
           this.postToChat(chatId, {
             type: "route",
@@ -714,7 +719,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   }
 
   private replaceDraftId(oldId: string, chat: SidebarChat): void {
-    if (!chat.session || !chat.id.startsWith("draft-")) return;
+    if (!chat.session || !chat.id.startsWith("draft-") || chat.running) return;
     this.sidebarChats.delete(oldId);
     chat.id = chat.session.sessionId;
     if (this.activeChatId === oldId) this.activeChatId = chat.id;

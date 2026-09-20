@@ -293,8 +293,9 @@ class SidebarProvider {
     async slash(input, chatId = this.activeChatId) {
         const [command, ...parts] = input.split(/\s+/);
         const argument = parts.join(" ");
+        const chat = this.sidebarChats.get(chatId);
         const commands = {
-            "/status": ["session"],
+            "/status": ["session", ...(chat?.session ? [chat.session.sessionId] : [])],
             "/sessions": ["sessions"],
             "/models": ["models"],
             "/account": ["account"],
@@ -543,6 +544,10 @@ class SidebarProvider {
                             turnCount: 0,
                         };
                         chat.activeSession = true;
+                        if (chatId === this.activeChatId) {
+                            this.session = chat.session;
+                            this.activeSession = true;
+                        }
                     }
                     this.postToChat(chatId, {
                         type: "route",
@@ -675,7 +680,7 @@ class SidebarProvider {
         this.replaceDraftId(chat.id, chat);
     }
     replaceDraftId(oldId, chat) {
-        if (!chat.session || !chat.id.startsWith("draft-"))
+        if (!chat.session || !chat.id.startsWith("draft-") || chat.running)
             return;
         this.sidebarChats.delete(oldId);
         chat.id = chat.session.sessionId;

@@ -3,7 +3,7 @@ import { routeTask } from "./router.js";
 import {
   addTokenUsage,
   commandExists,
-  isApprovalAnswer,
+  isPermissionApproval,
   isUsageLimitError,
   runAgent,
 } from "./runner.js";
@@ -345,7 +345,7 @@ export async function orchestrate(
       clarificationCount++;
       logger.question(result.question);
       const answer = (await options.askUser(result.question)).trim();
-      const elevated = isApprovalAnswer(answer);
+      const elevated = isPermissionApproval(result.question, answer);
       logger.status(
         elevated
           ? `approval received → resuming ${p.kind} with elevated permissions`

@@ -321,13 +321,16 @@ export function permissionFailureQuestion(text: string): string | undefined {
   // retry instead of repeatedly asking the user to sign in again.
   const githubCredentialFailure =
     /\b(?:(?:github|gh)(?:\s+cli)?\s+(?:authentication|auth|token)|(?:configured|active)\s+(?:github\s+)?token)\b.{0,120}\b(?:invalid|expired|unavailable|unreadable|failed)\b/i;
+  const directPermissionRequest =
+    /\b(?:command|operation|tool|sandbox|access)\b.{0,120}\b(?:needs?|requires?|requests?)\b.{0,40}\b(?:your\s+)?(?:approval|permission|authori[sz]ation)\b/i;
 
   if (
     !failure.test(text) &&
     !connectionFailure.test(text) &&
     !reversedConnectionFailure.test(text) &&
     !githubConnectionFailure.test(text) &&
-    !githubCredentialFailure.test(text)
+    !githubCredentialFailure.test(text) &&
+    !directPermissionRequest.test(text)
   )
     return undefined;
 
@@ -343,6 +346,11 @@ export function isApprovalAnswer(answer: string): boolean {
   return /^(?:y|yes|approve|approved|allow|allowed|confirm|confirmed|proceed)$/i.test(
     answer.trim(),
   );
+}
+
+/** Only permission prompts may turn a natural affirmative into an elevated retry. */
+export function isPermissionApproval(question: string, answer: string): boolean {
+  return isApprovalAnswer(answer) && /^Permission required to\b/i.test(question.trim());
 }
 
 export function genericProgress(event: any): ParsedProviderEvent {

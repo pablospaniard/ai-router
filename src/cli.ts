@@ -38,7 +38,7 @@ import {
   addTokenUsage,
   commandExists,
   commandVersion,
-  isApprovalAnswer,
+  isPermissionApproval,
   isUsageLimitError,
   runAgent,
 } from "./runner.js";
@@ -403,7 +403,7 @@ async function singleRun(
     clarificationCount++;
     logger.question(result.question);
     const answer = await askUser(result.question);
-    const elevated = isApprovalAnswer(answer);
+    const elevated = isPermissionApproval(result.question, answer);
     logger.status(
       elevated
         ? "approval received → resuming single phase with elevated permissions"
