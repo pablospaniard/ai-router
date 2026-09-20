@@ -171,7 +171,8 @@ function parseArgs(argv: string[]) {
     } else taskParts.push(arg);
   }
   if (adaptive && single) throw new Error("Use either --adaptive or --single, not both");
-  if (!["auto", "claude", "codex"].includes(agent)) throw new Error(`Invalid --agent: ${agent}`);
+  if (!["auto", "claude", "codex", "gemini", "copilot"].includes(agent))
+    throw new Error(`Invalid --agent: ${agent}`);
   return {
     agent,
     tier,
@@ -454,7 +455,7 @@ function interactiveHelp(): string {
       `${commandColor("/new [title]")}        ${ui.gray("start a fresh session")}`,
       `${commandColor("/status")}             ${ui.gray("show session and run preferences")}`,
       `${commandColor("/mode auto|adaptive|single")} ${ui.gray("set workflow mode")}`,
-      `${commandColor("/agent auto|claude|codex")}   ${ui.gray("pin or auto-select a provider")}`,
+      `${commandColor("/agent auto|claude|codex|gemini|copilot")} ${ui.gray("pin or auto-select a provider")}`,
       `${commandColor("/tier auto|fast|balanced|deep")} ${ui.gray("set model tier")}`,
       `${commandColor("/log compact|live|verbose")}  ${ui.gray("set output detail")}`,
       `${commandColor("/models")}             ${ui.gray("show active model mapping")}`,
@@ -730,7 +731,7 @@ async function main() {
     console.log(divider("Doctor"));
     console.log(`${ui.gray("Config ")} ${path ? ui.cyan(path) : ui.yellow("built-in defaults")}`);
     console.log(`${ui.gray("History")} ${ui.cyan(historyPath(config.history))}`);
-    for (const agent of ["claude", "codex"] as const) {
+    for (const agent of ["claude", "codex", "gemini", "copilot"] as const) {
       const command = config[agent].command;
       const exists = commandExists(command);
       console.log(
@@ -769,7 +770,7 @@ async function main() {
     console.log(
       `${ui.bold("Output")}     ${ui.cyan(report.totals.outputTokens.toLocaleString())} ${ui.gray("tokens (included above)")}`,
     );
-    for (const agent of ["claude", "codex"] as const) {
+    for (const agent of ["claude", "codex", "gemini", "copilot"] as const) {
       console.log(
         `${agentColor(agent, agent.padEnd(6))} ${ui.gray("default model")} ${report.defaults[agent] ? ui.cyan(report.defaults[agent]!) : ui.yellow("not detected")}`,
       );

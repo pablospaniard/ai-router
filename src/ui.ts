@@ -19,8 +19,11 @@ export const ui = {
 export function brand(s = "airo"): string {
   return ui.bold(ui.cyan(s));
 }
-export function agentColor(agent: "claude" | "codex", s: string): string {
-  return agent === "claude" ? ui.magenta(s) : ui.cyan(s);
+export function agentColor(agent: "claude" | "codex" | "gemini" | "copilot", s: string): string {
+  if (agent === "claude") return ui.magenta(s);
+  if (agent === "gemini") return ui.blue(s);
+  if (agent === "copilot") return ui.green(s);
+  return ui.cyan(s);
 }
 export function tierColor(tier: string): string {
   return tier === "fast" ? ui.green(tier) : tier === "balanced" ? ui.yellow(tier) : ui.red(tier);

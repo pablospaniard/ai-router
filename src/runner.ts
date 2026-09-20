@@ -45,7 +45,7 @@ function argsForRoute(
       args.push("--permission-mode", effectivePermissionMode);
     if (route.effort !== "auto") env.CLAUDE_CODE_EFFORT_LEVEL = route.effort;
     args.push(prompt);
-  } else {
+  } else if (route.agent === "codex") {
     if (elevated || config.permissions.mode === "fullAccess") {
       args.push("--sandbox", "danger-full-access");
     } else {
@@ -57,6 +57,15 @@ function argsForRoute(
     if (structuredProgress && headless) args.push("--json");
     args.push("--model", route.model);
     if (route.effort !== "auto") args.push("-c", `model_reasoning_effort="${route.effort}"`);
+    args.push(prompt);
+  } else if (route.agent === "gemini") {
+    if (headless) args.push("--prompt", prompt);
+    args.push("--model", route.model);
+    if (structuredProgress && headless) args.push("--output-format", "stream-json");
+  } else {
+    if (headless) args.push("--prompt", prompt);
+    args.push("--model", route.model);
+    if (structuredProgress && headless) args.push("--silent");
     args.push(prompt);
   }
   return { args, env };
@@ -282,8 +291,36 @@ export function isApprovalAnswer(answer: string): boolean {
   return /^(?:approve|approved)$/i.test(answer.trim());
 }
 
+export function genericProgress(event: any): ParsedProviderEvent {
+  const messages: Array<{ category: string; text: string }> = [];
+  if (typeof event === "string") return { messages, finalOutput: event };
+  if (!event || typeof event !== "object") return { messages };
+  const text =
+    event.response ?? event.output ?? event.message?.content ?? event.message ?? event.text;
+  if (text) messages.push({ category: "message", text: String(text) });
+  if (event.error)
+    messages.push({ category: "error", text: String(event.error?.message ?? event.error) });
+  const usage = event.usage;
+  return {
+    messages,
+    candidateOutput: text ? String(text) : undefined,
+    finalOutput: text ? String(text) : undefined,
+    usage: usage
+      ? {
+          uncachedInputTokens: number(usage.input_tokens ?? usage.promptTokenCount),
+          cachedInputTokens: number(usage.cached_input_tokens ?? usage.cachedContentTokenCount),
+          cacheWriteInputTokens: 0,
+          outputTokens: number(usage.output_tokens ?? usage.candidatesTokenCount),
+          reasoningOutputTokens: 0,
+        }
+      : undefined,
+  };
+}
+
 export function progressFor(agent: Agent, event: any): ParsedProviderEvent {
-  return agent === "claude" ? claudeProgress(event) : codexProgress(event);
+  if (agent === "claude") return claudeProgress(event);
+  if (agent === "codex") return codexProgress(event);
+  return genericProgress(event);
 }
 
 export async function runAgent(

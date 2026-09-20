@@ -105,7 +105,7 @@ const MOST_POWERFUL_MODEL =
 const AVOID_MOST_POWERFUL_MODEL =
   /\b(?:do\s+not|don't|never|avoid)\s+use\s+(?:the\s+)?(?:most\s+(?:powerful|powerfull|capable)|strongest)\s+(?:available\s+)?model\b/i;
 const EXPLICIT_MODEL =
-  /\b(?:use|using|choose|pick|select|with|model)\s+(?:the\s+)?["'`]?((?:(?:gpt|codex|claude)[-._][a-z0-9][-._a-z0-9]*|o[1-9](?:[-._][a-z0-9][-._a-z0-9]*)?|haiku|sonnet|opus))["'`]?\b/i;
+  /\b(?:use|using|choose|pick|select|with|model)\s+(?:the\s+)?["'`]?((?:(?:gpt|codex|claude|gemini)[-._][a-z0-9][-._a-z0-9]*|o[1-9](?:[-._][a-z0-9][-._a-z0-9]*)?|haiku|sonnet|opus))["'`]?\b/i;
 
 export function requestedModelTier(task: string): ModelTier | undefined {
   if (AVOID_MOST_POWERFUL_MODEL.test(task)) return undefined;
@@ -114,7 +114,7 @@ export function requestedModelTier(task: string): ModelTier | undefined {
 }
 
 export function agentForModel(model: string, config: RouterConfig): Agent | undefined {
-  for (const agent of ["claude", "codex"] as const) {
+  for (const agent of ["claude", "codex", "gemini", "copilot"] as const) {
     if (
       Object.values(config[agent].models).some(
         (profile) => profile.model.toLowerCase() === model.toLowerCase(),
@@ -124,6 +124,8 @@ export function agentForModel(model: string, config: RouterConfig): Agent | unde
   }
   if (/^(?:claude(?:-|$)|haiku$|sonnet$|opus$)/i.test(model)) return "claude";
   if (/^(?:gpt(?:-|$)|codex(?:-|$)|o[1-9](?:-|$))/i.test(model)) return "codex";
+  if (/^gemini(?:-|$)/i.test(model)) return "gemini";
+  if (/^(?:claude|gpt)-/i.test(model)) return "copilot";
   return undefined;
 }
 

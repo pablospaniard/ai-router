@@ -131,7 +131,7 @@ export function learningHints(task: string, config: HistoryConfig): LearningHint
   const maxAgentBoost = 8;
   const maxTierBoost = 6;
   const empty: LearningHint = {
-    agentBoosts: { claude: 0, codex: 0 },
+    agentBoosts: { claude: 0, codex: 0, gemini: 0, copilot: 0 },
     tierBoosts: { fast: 0, balanced: 0, deep: 0 },
     notes: [],
   };

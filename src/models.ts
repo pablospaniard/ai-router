@@ -6,7 +6,7 @@ export function printModels() {
   console.log("");
   console.log(divider("Active model configuration"));
   console.log(`${ui.gray("config")} ${path ? ui.cyan(path) : ui.yellow("built-in defaults")}`);
-  for (const agent of ["claude", "codex"] as const) {
+  for (const agent of ["claude", "codex", "gemini", "copilot"] as const) {
     console.log("");
     console.log(`${statusIcon("info")} ${ui.bold(agentColor(agent, agent.toUpperCase()))}`);
     console.log(`  ${ui.gray("access ")} ${ui.bold("all provider models")}`);
