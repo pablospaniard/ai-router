@@ -313,7 +313,7 @@ async function singleRun(
         ? "approval received → resuming single phase with elevated permissions"
         : "input received → resuming single phase",
     );
-    effectivePrompt = `${basePrompt}\n\nPrevious clarification question: ${result.question}\nUser answer: ${answer}\n\nContinue the task using this answer. If another blocking decision is required, use AIROUTE_QUESTION: <question>.`;
+    effectivePrompt = `${basePrompt}\n\n${elevated ? "[PERMISSION APPROVED: User granted elevated access]\n\n" : ""}Previous clarification question: ${result.question}\nUser answer: ${answer}\n\nContinue the task using this answer. If another blocking decision is required, use AIROUTE_QUESTION: <question>.`;
     result = await runAgent(routed, effectivePrompt, config, {
       headless: true,
       capture: true,

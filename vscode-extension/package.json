@@ -129,6 +129,7 @@
   "extensionKind": [
     "workspace"
   ],
+  "icon": "media/airo-icon-512.png",
   "engines": {
     "vscode": "^1.106.0"
   },

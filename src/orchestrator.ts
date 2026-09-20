@@ -298,7 +298,7 @@ export async function orchestrate(
           ? `approval received → resuming ${p.kind} with elevated permissions`
           : `input received → resuming ${p.kind}`,
       );
-      effectivePrompt = `${prompt}\n\nThe previous attempt paused for clarification.\nQuestion: ${result.question}\nUser answer: ${answer}\n\nContinue the same phase using this answer. Do not repeat the question unless another genuinely blocking decision is required.`;
+      effectivePrompt = `${prompt}\n\n${elevated ? "[PERMISSION APPROVED: User granted elevated access]\n\n" : ""}The previous attempt paused for clarification.\nQuestion: ${result.question}\nUser answer: ${answer}\n\nContinue the same phase using this answer. Do not repeat the question unless another genuinely blocking decision is required.`;
       result = await runAgent(route, effectivePrompt, config, {
         headless: true,
         capture: true,
