@@ -17,7 +17,12 @@ import { loadConfig, writeProjectConfig } from "./config.js";
 import { runSetup } from "./setup.js";
 import { printModels } from "./models.js";
 import { appendHistory, historyPath, newHistoryId, readHistory, setFeedback } from "./history.js";
-import { applyRouteOverrides, orchestrate, shouldOrchestrate } from "./orchestrator.js";
+import {
+  applyRouteOverrides,
+  applyRoutePreferences,
+  orchestrate,
+  shouldOrchestrate,
+} from "./orchestrator.js";
 import { agentForModel, routeTask, routingClarification } from "./router.js";
 import {
   addTokenUsage,
@@ -139,6 +144,8 @@ function help() {
 function parseArgs(argv: string[]) {
   let agent: "auto" | Agent = "auto";
   let tier: ModelTier | undefined;
+  let preferredAgent: Agent | undefined;
+  let preferredTier: ModelTier | undefined;
   let model: string | undefined;
   let effort: Effort | undefined;
   let dryRun = false,
@@ -153,6 +160,8 @@ function parseArgs(argv: string[]) {
     const arg = argv[i];
     if (arg === "--agent") agent = argv[++i] as any;
     else if (arg === "--tier") tier = argv[++i] as ModelTier;
+    else if (arg === "--prefer-agent") preferredAgent = argv[++i] as Agent;
+    else if (arg === "--prefer-tier") preferredTier = argv[++i] as ModelTier;
     else if (arg === "--model") model = argv[++i];
     else if (arg === "--effort") effort = argv[++i] as Effort;
     else if (arg === "--dry-run") dryRun = true;
@@ -176,6 +185,8 @@ function parseArgs(argv: string[]) {
   return {
     agent,
     tier,
+    preferredAgent,
+    preferredTier,
     model,
     effort,
     dryRun,
@@ -218,6 +229,18 @@ function routeOverrides(args: ReturnType<typeof parseArgs>, config: any) {
   };
 }
 
+function routeWithPreferences(
+  route: ReturnType<typeof routeTask>,
+  args: ReturnType<typeof parseArgs>,
+  config: any,
+) {
+  return applyRoutePreferences(
+    route,
+    { agent: args.preferredAgent, tier: args.preferredTier },
+    config,
+  );
+}
+
 async function clarifyRouting(
   args: ReturnType<typeof parseArgs>,
   config: any,
@@ -250,7 +273,7 @@ async function singleRun(
   askUser: (question: string) => Promise<string> = askTerminal,
 ) {
   let routed = applyRouteOverrides(
-    routeTask(args.task, config),
+    routeWithPreferences(routeTask(args.task, config), args, config),
     routeOverrides(args, config),
     config,
   );
@@ -385,6 +408,7 @@ async function execute(
       session,
       logLevel: args.logLevel,
       askUser,
+      routePreferences: { agent: args.preferredAgent, tier: args.preferredTier },
       routeOverrides: routeOverrides(args, config),
     });
     if (session && !args.dryRun)

@@ -169,9 +169,6 @@ class SidebarProvider {
                 this.postState(this.runningChatId);
                 this.child.stdin.write(`${text}\n`);
             }
-            else {
-                this.notice("AIRO is already working on a request.");
-            }
             return;
         }
         if (text.startsWith("/"))
@@ -442,14 +439,13 @@ class SidebarProvider {
         else if (mode === "single")
             args.push("--single");
         if (agent !== "auto")
-            args.push("--agent", agent);
+            args.push("--prefer-agent", agent);
         if (tier !== "auto")
-            args.push("--tier", tier);
+            args.push("--prefer-tier", tier);
         return [...args, "--log", log, task];
     }
     run(args, showOutput, label = args.join(" ")) {
         if (this.running) {
-            this.notice("AIRO is already working on a request.");
             return Promise.resolve({ code: null, output: "", started: false });
         }
         const folder = vscode.workspace.workspaceFolders?.[0];
@@ -464,7 +460,7 @@ class SidebarProvider {
         this.runningChatId = chatId;
         this.stopping = false;
         this.awaitingInput = false;
-        this.postState(chatId);
+        this.postAllStates();
         return new Promise((resolve) => {
             let output = "";
             let humanOutput = "";
@@ -487,7 +483,7 @@ class SidebarProvider {
             catch (error) {
                 this.running = false;
                 this.runningChatId = undefined;
-                this.postState(chatId);
+                this.postAllStates();
                 this.notice(`Could not start AIRO: ${String(error)}`, chatId);
                 return resolve({ code: null, output, started });
             }
@@ -567,7 +563,7 @@ class SidebarProvider {
                 this.runningChatId = undefined;
                 this.stopping = false;
                 this.awaitingInput = false;
-                this.postState(chatId);
+                this.postAllStates();
                 if (!stopped && showOutput && !hasFinal && humanOutput.trim()) {
                     this.postToChat(chatId, {
                         type: code === 0 ? "final" : "failure",
@@ -749,10 +745,15 @@ class SidebarProvider {
         const isRunningChat = this.running && this.runningChatId === chatId;
         this.postToChat(chatId, {
             type: "state",
+            busy: this.running,
             running: isRunningChat,
             stopping: isRunningChat && this.stopping,
             awaitingInput: isRunningChat && this.awaitingInput,
         });
+    }
+    postAllStates() {
+        for (const chatId of this.sidebarChats.keys())
+            this.postState(chatId);
     }
     notice(value, chatId = this.activeChatId) {
         this.postToChat(chatId, { type: "notice", value });

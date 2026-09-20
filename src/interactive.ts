@@ -135,8 +135,8 @@ export function taskArgs(task: string, preferences: InteractivePreferences): str
   const args = ["--continue"];
   if (preferences.mode === "adaptive") args.push("--adaptive");
   if (preferences.mode === "single") args.push("--single");
-  if (preferences.agent !== "auto") args.push("--agent", preferences.agent);
-  if (preferences.tier) args.push("--tier", preferences.tier);
+  if (preferences.agent !== "auto") args.push("--prefer-agent", preferences.agent);
+  if (preferences.tier) args.push("--prefer-tier", preferences.tier);
   args.push("--log", preferences.logLevel, task);
   return args;
 }

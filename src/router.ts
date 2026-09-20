@@ -140,11 +140,11 @@ function routingClauses(task: string): Array<{ index: number; text: string; swit
   const clauses: Array<{ index: number; text: string; switchLike: boolean }> = [];
   const patterns: Array<[RegExp, boolean]> = [
     [
-      /\b(?:switch|change|move|route)(?:\s+(?:it|this|the\s+task))?\s+(?:over\s+)?to\s+([^,;.!?\n]+)/gi,
+      /\b(?:switch|change|move|route)(?:\s+(?:it|this|the\s+task))?\s+(?:over\s+)?to\s+((?:(?![,;!?\n]|\.(?=\s+[A-Z]|\s*$)).)+)/gi,
       true,
     ],
     [
-      /\b(?:use|using|choose|pick|select|run(?:\s+it)?\s+with|go\s+with|with)\s+([^,;.!?\n]+)/gi,
+      /\b(?:use|using|choose|pick|select|run(?:\s+it)?\s+with|go\s+with|with)\s+((?:(?![,;!?\n]|\.(?=\s+[A-Z]|\s*$)).)+)/gi,
       false,
     ],
     [/\bmodel\s+([a-z0-9][a-z0-9._-]*)\b/gi, false],

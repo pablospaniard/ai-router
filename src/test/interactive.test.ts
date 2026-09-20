@@ -86,7 +86,7 @@ test("builds minimal CLI arguments for automatic preferences", () => {
   assert.deepEqual(taskArgs("inspect", { mode: "single", agent: "claude", logLevel: "live" }), [
     "--continue",
     "--single",
-    "--agent",
+    "--prefer-agent",
     "claude",
     "--log",
     "live",
@@ -107,9 +107,9 @@ test("builds CLI arguments from interactive preferences", () => {
     [
       "--continue",
       "--adaptive",
-      "--agent",
+      "--prefer-agent",
       "codex",
-      "--tier",
+      "--prefer-tier",
       "deep",
       "--log",
       "compact",

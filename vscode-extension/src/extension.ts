@@ -195,8 +195,6 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
         this.awaitingInput = false;
         this.postState(this.runningChatId);
         this.child.stdin.write(`${text}\n`);
-      } else {
-        this.notice("AIRO is already working on a request.");
       }
       return;
     }
@@ -465,8 +463,8 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
         : [];
     if (mode === "adaptive") args.push("--adaptive");
     else if (mode === "single") args.push("--single");
-    if (agent !== "auto") args.push("--agent", agent);
-    if (tier !== "auto") args.push("--tier", tier);
+    if (agent !== "auto") args.push("--prefer-agent", agent);
+    if (tier !== "auto") args.push("--prefer-tier", tier);
     return [...args, "--log", log, task];
   }
 
@@ -476,7 +474,6 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     label = args.join(" "),
   ): Promise<{ code: number | null; output: string; started: boolean }> {
     if (this.running) {
-      this.notice("AIRO is already working on a request.");
       return Promise.resolve({ code: null, output: "", started: false });
     }
     const folder = vscode.workspace.workspaceFolders?.[0];
@@ -490,7 +487,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     this.runningChatId = chatId;
     this.stopping = false;
     this.awaitingInput = false;
-    this.postState(chatId);
+    this.postAllStates();
     return new Promise((resolve) => {
       let output = "";
       let humanOutput = "";
@@ -516,7 +513,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
       } catch (error) {
         this.running = false;
         this.runningChatId = undefined;
-        this.postState(chatId);
+        this.postAllStates();
         this.notice(`Could not start AIRO: ${String(error)}`, chatId);
         return resolve({ code: null, output, started });
       }
@@ -587,7 +584,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
         this.runningChatId = undefined;
         this.stopping = false;
         this.awaitingInput = false;
-        this.postState(chatId);
+        this.postAllStates();
         if (!stopped && showOutput && !hasFinal && humanOutput.trim()) {
           this.postToChat(chatId, {
             type: code === 0 ? "final" : "failure",
@@ -778,10 +775,15 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     const isRunningChat = this.running && this.runningChatId === chatId;
     this.postToChat(chatId, {
       type: "state",
+      busy: this.running,
       running: isRunningChat,
       stopping: isRunningChat && this.stopping,
       awaitingInput: isRunningChat && this.awaitingInput,
     });
+  }
+
+  private postAllStates(): void {
+    for (const chatId of this.sidebarChats.keys()) this.postState(chatId);
   }
 
   private notice(value: string, chatId = this.activeChatId): void {

@@ -179,6 +179,17 @@ export interface RouteOverrides {
   effort?: Effort;
 }
 
+/** Apply persistent UI preferences as defaults while preserving choices in the current prompt. */
+export function applyRoutePreferences(
+  base: RouteResult,
+  preferences: Pick<RouteOverrides, "agent" | "tier">,
+  config: RouterConfig,
+): RouteResult {
+  const agent = base.userRequestedAgent || base.userRequestedModel ? undefined : preferences.agent;
+  const tier = base.userRequestedTier || base.userRequestedModel ? undefined : preferences.tier;
+  return applyRouteOverrides(base, { agent, tier }, config);
+}
+
 export function applyRouteOverrides(
   base: RouteResult,
   overrides: RouteOverrides,
@@ -236,6 +247,7 @@ export async function orchestrate(
     session?: SessionState;
     logLevel?: LogLevel;
     askUser?: (question: string) => Promise<string>;
+    routePreferences?: Pick<RouteOverrides, "agent" | "tier">;
     routeOverrides?: RouteOverrides;
   } = {},
 ): Promise<{ runId: string; phases: PhaseExecution[]; exitCode: number }> {
@@ -258,7 +270,11 @@ export async function orchestrate(
     );
     for (let i = 0; i < plans.length; i++) {
       const p = plans[i];
-      let route = applyPhasePreference(routeTask(task, config), p, config);
+      let route = applyRoutePreferences(
+        applyPhasePreference(routeTask(task, config), p, config),
+        options.routePreferences ?? {},
+        config,
+      );
       route = applyRouteOverrides(route, options.routeOverrides ?? {}, config);
       console.log(
         `  ${ui.gray(String(i + 1).padStart(2) + ".")} ${ui.bold(p.kind.padEnd(9))} ${ui.cyan("→")} ${agentColor(route.agent, route.agent)}${ui.gray("/")}${ui.cyan(route.model)} ${ui.gray("effort=")}${ui.magenta(route.effort)} ${ui.gray("tier=")}${tierColor(route.modelTier)} ${ui.gray("—")} ${p.title}`,
@@ -273,7 +289,11 @@ export async function orchestrate(
   for (let i = 0; i < plans.length && i < config.orchestration.maxPhases; i++) {
     const p = plans[i];
     const prompt = phaseTask(routedTask, p, executions);
-    let route = applyPhasePreference(routeTask(task, config), p, config);
+    let route = applyRoutePreferences(
+      applyPhasePreference(routeTask(task, config), p, config),
+      options.routePreferences ?? {},
+      config,
+    );
     route = applyRouteOverrides(route, options.routeOverrides ?? {}, config);
     route = fallbackIfMissing(route, config);
 
