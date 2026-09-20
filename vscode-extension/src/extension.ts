@@ -49,6 +49,7 @@ type SidebarChat = {
 };
 type ProtocolEvent = {
   type: string;
+  sessionId?: string;
   provider?: string;
   model?: string;
   tier?: string;
@@ -183,39 +184,48 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
       await this.addAttachments(message.files, message.chatId);
     else if (message.type === "clipboardImage" && message.dataUrl)
       await this.addClipboardImage(message.dataUrl, message.name, message.chatId);
-    else if (message.type === "action") await this.action(message.action ?? "", message.text);
-    else if (message.type === "prompt" && (message.text?.trim() || this.attachments.length))
-      await this.prompt(message.text?.trim() || "Please inspect the attached file(s).");
+    else if (message.type === "action")
+      await this.action(message.action ?? "", message.text, message.chatId);
+    else if (
+      message.type === "prompt" &&
+      (message.text?.trim() ||
+        this.sidebarChats.get(message.chatId ?? this.activeChatId)?.attachments.length)
+    )
+      await this.prompt(
+        message.text?.trim() || "Please inspect the attached file(s).",
+        message.chatId,
+      );
   }
 
-  private async prompt(text: string): Promise<void> {
-    const activeChat = this.sidebarChats.get(this.activeChatId);
-    if (!activeChat) return;
-    if (activeChat.running) {
-      if (activeChat.awaitingInput && activeChat.child?.stdin.writable) {
-        activeChat.awaitingInput = false;
-        this.postState(activeChat.id);
-        activeChat.child.stdin.write(`${text}\n`);
+  private async prompt(text: string, chatId = this.activeChatId): Promise<void> {
+    const chat = this.sidebarChats.get(chatId);
+    if (!chat) return;
+    if (chat.running) {
+      if (chat.awaitingInput && chat.child?.stdin.writable) {
+        chat.awaitingInput = false;
+        this.postState(chat.id);
+        chat.child.stdin.write(`${text}\n`);
       }
       return;
     }
-    if (text.startsWith("/")) return this.slash(text);
-    const chat = this.sidebarChats.get(this.activeChatId);
-    if (chat?.title === "New chat") {
+    if (text.startsWith("/")) return this.slash(text, chatId);
+    if (chat.title === "New chat") {
       chat.title = shortDescription(text);
       this.postTabs();
     }
-    const attached = this.attachments.length
+    const attached = chat.attachments.length
       ? "\n\nAttached local file(s) for inspection:\n" +
-        this.attachments.map((file) => `- ${file}`).join("\n") +
+        chat.attachments.map((file) => `- ${file}`).join("\n") +
         "\nUse the provider's local file inspection capability if available."
       : "";
-    this.attachments = [];
-    this.attachmentPreviews.clear();
-    this.saveActiveChat();
-    this.postAttachments();
-    const chatId = this.activeChatId;
-    const result = await this.run(this.taskArgs(text + attached), true, text);
+    chat.attachments = [];
+    chat.attachmentPreviews.clear();
+    if (this.activeChatId === chatId) {
+      this.attachments = [];
+      this.attachmentPreviews.clear();
+    }
+    this.postAttachments(chatId);
+    const result = await this.run(this.taskArgs(text + attached, chat), true, text, chatId);
     if (result.started) {
       const chat = this.sidebarChats.get(chatId);
       if (!chat) return;
@@ -309,7 +319,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     this.postAttachments(chatId);
   }
 
-  private async slash(input: string): Promise<void> {
+  private async slash(input: string, chatId = this.activeChatId): Promise<void> {
     const [command, ...parts] = input.split(/\s+/);
     const argument = parts.join(" ");
     const commands: Record<string, string[]> = {
@@ -321,24 +331,28 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
       "/logs": ["logs"],
       "/doctor": ["doctor"],
     };
-    if (command === "/help") return this.post({ type: "help" });
-    if (command === "/clear") return this.post({ type: "clear" });
-    if (command === "/attach") return this.pickAttachments();
+    if (command === "/help") return this.postToChat(chatId, { type: "help" });
+    if (command === "/clear") return this.postToChat(chatId, { type: "clear" });
+    if (command === "/attach") return this.pickAttachments(chatId);
     if (command === "/new") return this.newTab();
     if (command === "/exit" || command === "/quit")
-      return this.notice("The sidebar stays available. Start a new chat whenever you like.");
+      return this.notice(
+        "The sidebar stays available. Start a new chat whenever you like.",
+        chatId,
+      );
     if (["/mode", "/agent", "/tier", "/log"].includes(command))
-      return this.notice("Routing preferences are managed in VS Code Settings.");
+      return this.notice("Routing preferences are managed in VS Code Settings.", chatId);
     if (command === "/feedback") {
       if (!/^(?:good|bad)(?:\s|$)|^phase\s+\S+\s+(?:good|bad)(?:\s|$)/.test(argument))
         return this.notice(
           "Usage: /feedback good|bad [note] or /feedback phase <id> good|bad [note]",
+          chatId,
         );
-      await this.run(["feedback", ...parts], true, "Feedback");
+      await this.run(["feedback", ...parts], true, "Feedback", chatId);
       return;
     }
     if (command === "/learning") {
-      await this.run(["learning", ...parts], true, "Learning");
+      await this.run(["learning", ...parts], true, "Learning", chatId);
       return;
     }
     if (commands[command]) {
@@ -346,13 +360,23 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
         command === "/sessions" ? ["sessions", "--limit", "5"] : commands[command],
         true,
         command.slice(1),
+        chatId,
       );
       return;
     }
-    this.notice(`Unknown command: ${command}. Type /help for available commands.`);
+    this.notice(`Unknown command: ${command}. Type /help for available commands.`, chatId);
   }
 
-  private async action(action: string, text?: string): Promise<void> {
+  private async action(action: string, text?: string, chatId = this.activeChatId): Promise<void> {
+    if (action === "githubAuth") {
+      const terminal = vscode.window.createTerminal("GitHub Login");
+      terminal.show();
+      terminal.sendText("gh auth login -h github.com -p https -w");
+      void vscode.window.showInformationMessage(
+        "Complete GitHub sign-in in the terminal, then return to AIRO and send “retry” in the reply box.",
+      );
+      return;
+    }
     if (action === "settings") {
       await vscode.commands.executeCommand(
         "workbench.action.openSettings",
@@ -362,9 +386,9 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     }
     if (action === "new") return this.newTab();
     if (action === "history") return this.showHistory();
-    if (action === "stop") return this.stop();
+    if (action === "stop") return this.stop(chatId);
     if (action === "feedback") {
-      await this.run(["feedback", text === "bad" ? "bad" : "good"], true, "Feedback");
+      await this.run(["feedback", text === "bad" ? "bad" : "good"], true, "Feedback", chatId);
       return;
     }
     const commands: Record<string, string[]> = {
@@ -374,11 +398,11 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
       logs: ["logs"],
       doctor: ["doctor"],
     };
-    if (commands[action]) await this.run(commands[action], true, action);
+    if (commands[action]) await this.run(commands[action], true, action, chatId);
   }
 
-  private stop(): void {
-    const chat = this.sidebarChats.get(this.activeChatId);
+  private stop(chatId = this.activeChatId): void {
+    const chat = this.sidebarChats.get(chatId);
     if (!chat?.running || !chat.child || chat.stopping) return;
     chat.stopping = chat.child.kill();
     this.postState(chat.id);
@@ -489,15 +513,15 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     });
   }
 
-  private taskArgs(task: string): string[] {
+  private taskArgs(task: string, chat = this.sidebarChats.get(this.activeChatId)): string[] {
     const config = vscode.workspace.getConfiguration("airo");
     const mode = config.get<string>("mode", "auto");
     const agent = config.get<string>("agent", "auto");
     const tier = config.get<string>("tier", "auto");
     const log = config.get<string>("logLevel", "live");
-    const args = this.session
-      ? ["--session", this.session.sessionId]
-      : this.activeSession
+    const args = chat?.session
+      ? ["--session", chat.session.sessionId]
+      : chat?.activeSession
         ? ["--continue"]
         : [];
     if (mode === "adaptive") args.push("--adaptive");
@@ -511,8 +535,8 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     args: string[],
     showOutput: boolean,
     label = args.join(" "),
+    chatId = this.activeChatId,
   ): Promise<{ code: number | null; output: string; started: boolean }> {
-    const chatId = this.activeChatId;
     const chat = this.sidebarChats.get(chatId);
     if (!chat) return Promise.resolve({ code: null, output: "", started: false });
     if (chat.running) {
@@ -560,6 +584,15 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
 
       const handleProtocol = (event: ProtocolEvent): void => {
         if (event.type === "route" && event.provider && event.model && event.tier) {
+          if (event.sessionId && !chat.session) {
+            chat.session = {
+              sessionId: event.sessionId,
+              description: chat.title,
+              updatedAt: new Date().toISOString(),
+              turnCount: 0,
+            };
+            chat.activeSession = true;
+          }
           this.postToChat(chatId, {
             type: "route",
             provider: event.provider,

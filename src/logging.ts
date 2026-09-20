@@ -169,6 +169,7 @@ export class RunLogger {
       provider: meta.agent,
       model: meta.model,
       tier: meta.tier,
+      sessionId: this.sessionId,
       phase: meta.phaseKind,
       phaseIndex: meta.phaseIndex,
       phaseTotal: meta.phaseTotal,
