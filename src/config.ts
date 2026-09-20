@@ -28,6 +28,24 @@ export const DEFAULT_CONFIG: RouterConfig = {
       deep: { model: "gpt-5.6-sol", effort: "xhigh" },
     },
   },
+  gemini: {
+    command: "gemini",
+    args: [],
+    models: {
+      fast: { model: "gemini-2.5-flash", effort: "low" },
+      balanced: { model: "gemini-2.5-pro", effort: "medium" },
+      deep: { model: "gemini-2.5-pro", effort: "high" },
+    },
+  },
+  copilot: {
+    command: "copilot",
+    args: [],
+    models: {
+      fast: { model: "gpt-4.1", effort: "low" },
+      balanced: { model: "claude-sonnet-4", effort: "medium" },
+      deep: { model: "claude-opus-4.1", effort: "high" },
+    },
+  },
   permissions: { mode: "prompt", networkAccess: true },
   history: { enabled: true, learningEnabled: true, similarityThreshold: 0.25 },
   logging: { level: "live", persist: true },
@@ -78,6 +96,8 @@ export function loadConfig(cwd = process.cwd()): { config: RouterConfig; path?: 
         ...parsed,
         claude: mergeProvider(DEFAULT_CONFIG.claude, parsed.claude),
         codex: mergeProvider(DEFAULT_CONFIG.codex, parsed.codex),
+        gemini: mergeProvider(DEFAULT_CONFIG.gemini, parsed.gemini),
+        copilot: mergeProvider(DEFAULT_CONFIG.copilot, parsed.copilot),
         permissions: { ...DEFAULT_CONFIG.permissions, ...parsed.permissions },
         history: { ...DEFAULT_CONFIG.history, ...parsed.history },
         orchestration: { ...DEFAULT_CONFIG.orchestration, ...parsed.orchestration },

@@ -13,8 +13,10 @@ import {
   commandExists,
   commandVersion,
   extractQuestion,
+  geminiProgress,
   isApprovalAnswer,
   isUsageLimitError,
+  permissionFailureQuestion,
   progressFor,
   runAgent,
 } from "../runner.js";
@@ -43,6 +45,23 @@ test("does not mistake an optional closing offer for blocking input", () => {
     extractQuestion(
       "The review is complete and no issues were found.\n\nWould you like me to open a PR?",
     ),
+    undefined,
+  );
+});
+
+test("turns concrete permission and connection failures into approval questions", () => {
+  assert.equal(
+    permissionFailureQuestion("fatal: could not open config: Permission denied"),
+    "Permission required to retry the blocked action with elevated access. Approve?",
+  );
+  assert.equal(
+    permissionFailureQuestion(
+      "I couldn't retrieve the PR comments: GitHub API access is currently unavailable (gh pr view failed with a connection error).",
+    ),
+    "Permission required to access GitHub and retry the blocked action. Approve?",
+  );
+  assert.equal(
+    permissionFailureQuestion("The review completed. Permission handling looks correct."),
     undefined,
   );
 });
@@ -254,6 +273,101 @@ test("uses the latest completed Codex agent message as the result candidate", ()
   assert.equal(final.candidateOutput, "Committed successfully.");
 });
 
+test("parses Gemini stream messages, tools, errors, and token stats", () => {
+  assert.deepEqual(geminiProgress(undefined), { messages: [] });
+  assert.match(
+    geminiProgress({ type: "init", model: "gemini", session_id: "session" }).messages[0].text,
+    /model=gemini session=session/,
+  );
+  assert.deepEqual(
+    geminiProgress({ type: "message", role: "user", content: "prompt" }).candidateOutput,
+    undefined,
+  );
+  const message = geminiProgress({
+    type: "message",
+    role: "assistant",
+    content: "answer",
+    delta: true,
+  });
+  assert.equal(message.candidateOutput, "answer");
+  assert.equal(message.appendCandidate, true);
+  assert.match(
+    geminiProgress({ type: "tool_use", tool_name: "shell", parameters: { command: "pwd" } })
+      .messages[0].text,
+    /shell/,
+  );
+  assert.equal(
+    geminiProgress({
+      type: "tool_result",
+      status: "error",
+      error: { message: "denied" },
+    }).messages[0].category,
+    "error",
+  );
+  assert.equal(
+    geminiProgress({ type: "error", severity: "warning", message: "retrying" }).messages[0]
+      .category,
+    "warning",
+  );
+  const result = geminiProgress({
+    type: "result",
+    status: "success",
+    stats: { input_tokens: 15, input: 10, cached: 5, output_tokens: 4 },
+  });
+  assert.deepEqual(result.usage, {
+    uncachedInputTokens: 10,
+    cachedInputTokens: 5,
+    cacheWriteInputTokens: 0,
+    outputTokens: 4,
+    reasoningOutputTokens: 0,
+  });
+  assert.equal(
+    progressFor("gemini", { type: "message", role: "assistant", content: "done" }).candidateOutput,
+    "done",
+  );
+});
+
+test("returns the complete Gemini streamed answer and usage", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-runner-gemini-"));
+  const command = path.join(dir, "mock-gemini");
+  fs.writeFileSync(
+    command,
+    `#!/usr/bin/env node
+for (const content of ["Final ", "result."]) {
+  process.stdout.write(JSON.stringify({type:"message", role:"assistant", content, delta:true}) + "\\n");
+}
+process.stdout.write(JSON.stringify({type:"result", status:"success", stats:{input_tokens:8,input:6,cached:2,output_tokens:3}}) + "\\n");
+`,
+  );
+  fs.chmodSync(command, 0o755);
+  try {
+    const config = structuredClone(DEFAULT_CONFIG);
+    config.gemini.command = command;
+    const route = routeTask("repair parser", config);
+    route.agent = "gemini";
+    route.model = config.gemini.models.fast.model;
+    const logger = new RunLogger({ runId: "gemini", level: "compact", persist: false });
+    const run = await runAgent(route, "task", config, {
+      headless: true,
+      capture: true,
+      logger,
+      logMeta: {
+        phaseIndex: 1,
+        phaseTotal: 1,
+        phaseKind: "single",
+        agent: "gemini",
+        model: route.model,
+        effort: route.effort,
+        tier: route.modelTier,
+      },
+    });
+    assert.equal(run.output, "Final result.");
+    assert.equal(run.usage?.cachedInputTokens, 2);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("returns only Claude's result event from a structured run", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-runner-"));
   const command = path.join(dir, "mock-claude");
@@ -463,6 +577,93 @@ process.stdout.write(JSON.stringify({type:"item.completed", item:{type:"agent_me
     });
     assert.match(elevated.output, /--sandbox danger-full-access/);
     assert.doesNotMatch(elevated.output, /sandbox_workspace_write\.network_access=true/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("applies the shared Gemini and Copilot permission policy", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-runner-provider-permission-"));
+  const command = path.join(dir, "mock-provider");
+  fs.writeFileSync(
+    command,
+    "#!/usr/bin/env node\nprocess.stdout.write(process.argv.slice(2).join(' '));\n",
+  );
+  fs.chmodSync(command, 0o755);
+  try {
+    for (const agent of ["gemini", "copilot"] as const) {
+      const config = structuredClone(DEFAULT_CONFIG);
+      config[agent].command = command;
+      const route = routeTask("repair parser", config);
+      route.agent = agent;
+      route.model = config[agent].models.fast.model;
+
+      const regular = await runAgent(route, "prompt", config, { headless: true, capture: true });
+      if (agent === "gemini") assert.match(regular.output, /--approval-mode default/);
+      else assert.match(regular.output, /--allow-all-urls/);
+      assert.doesNotMatch(regular.output, /--allow-all(?:\s|$)|--approval-mode yolo/);
+
+      const elevated = await runAgent(route, "prompt", config, {
+        headless: true,
+        capture: true,
+        elevated: true,
+      });
+      if (agent === "gemini") {
+        assert.match(elevated.output, /--approval-mode yolo/);
+        assert.match(elevated.output, /--skip-trust/);
+      } else {
+        assert.match(elevated.output, /--allow-all(?:\s|$)/);
+        assert.doesNotMatch(elevated.output, /--allow-all-urls/);
+      }
+
+      config.permissions.mode = "fullAccess";
+      const fullAccess = await runAgent(route, "prompt", config, {
+        headless: true,
+        capture: true,
+      });
+      if (agent === "gemini") assert.match(fullAccess.output, /--approval-mode yolo/);
+      else assert.match(fullAccess.output, /--allow-all(?:\s|$)/);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("only synthesizes a permission question when another access level is available", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-runner-auto-permission-"));
+  const command = path.join(dir, "mock-codex");
+  fs.writeFileSync(
+    command,
+    `#!/usr/bin/env node
+process.stdout.write(JSON.stringify({type:"item.completed", item:{type:"agent_message", text:"Unable to access the API because network access is blocked."}}) + "\\n");
+`,
+  );
+  fs.chmodSync(command, 0o755);
+  try {
+    const config = structuredClone(DEFAULT_CONFIG);
+    config.codex.command = command;
+    const route = routeTask("read API", config);
+    route.agent = "codex";
+
+    const regular = await runAgent(route, "prompt", config, { headless: true, capture: true });
+    assert.equal(
+      regular.question,
+      "Permission required to retry the blocked network action. Approve?",
+    );
+
+    const elevated = await runAgent(route, "prompt", config, {
+      headless: true,
+      capture: true,
+      elevated: true,
+    });
+    assert.equal(elevated.question, undefined);
+
+    config.permissions.mode = "fullAccess";
+    const fullAccess = await runAgent(route, "prompt", config, {
+      headless: true,
+      capture: true,
+    });
+    assert.equal(fullAccess.question, undefined);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

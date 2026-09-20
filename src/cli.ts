@@ -17,8 +17,8 @@ import { loadConfig, writeProjectConfig } from "./config.js";
 import { runSetup } from "./setup.js";
 import { printModels } from "./models.js";
 import { appendHistory, historyPath, newHistoryId, readHistory, setFeedback } from "./history.js";
-import { orchestrate, shouldOrchestrate } from "./orchestrator.js";
-import { agentForModel, routeTask } from "./router.js";
+import { applyRouteOverrides, orchestrate, shouldOrchestrate } from "./orchestrator.js";
+import { agentForModel, routeTask, routingClarification } from "./router.js";
 import {
   addTokenUsage,
   commandExists,
@@ -171,7 +171,8 @@ function parseArgs(argv: string[]) {
     } else taskParts.push(arg);
   }
   if (adaptive && single) throw new Error("Use either --adaptive or --single, not both");
-  if (!["auto", "claude", "codex"].includes(agent)) throw new Error(`Invalid --agent: ${agent}`);
+  if (!["auto", "claude", "codex", "gemini", "copilot"].includes(agent))
+    throw new Error(`Invalid --agent: ${agent}`);
   return {
     agent,
     tier,
@@ -207,6 +208,40 @@ function showFeedbackOption(config: any, interactive: boolean): void {
   console.log(`${statusIcon("info")} ${ui.gray("optional feedback:")} ${commandColor(command)}`);
 }
 
+function routeOverrides(args: ReturnType<typeof parseArgs>, config: any) {
+  const inferredAgent = args.model ? agentForModel(args.model, config) : undefined;
+  return {
+    agent: args.agent === "auto" ? inferredAgent : args.agent,
+    tier: args.tier,
+    model: args.model,
+    effort: args.effort,
+  };
+}
+
+async function clarifyRouting(
+  args: ReturnType<typeof parseArgs>,
+  config: any,
+  askUser: (question: string) => Promise<string>,
+): Promise<ReturnType<typeof parseArgs>> {
+  let task = args.task;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const question = routingClarification(task, config);
+    if (!question) return task === args.task ? args : { ...args, task };
+    new RunLogger({
+      runId: `routing-${Date.now().toString(36)}`,
+      level: args.logLevel ?? config.logging.level,
+      persist: false,
+    }).question(question);
+    const answer = (await askUser(question)).trim();
+    if (!answer)
+      throw new Error("A provider, model, tier, or automatic routing choice is required.");
+    task = `${args.task}\n\nRouting clarification: ${answer}`;
+  }
+  const unresolved = routingClarification(task, config);
+  if (unresolved) throw new Error(unresolved);
+  return { ...args, task };
+}
+
 async function singleRun(
   args: ReturnType<typeof parseArgs>,
   config: any,
@@ -214,31 +249,11 @@ async function singleRun(
   session?: SessionState,
   askUser: (question: string) => Promise<string> = askTerminal,
 ) {
-  let routed = routeTask(args.task, config);
-  if (args.agent === "auto" && args.model) {
-    const inferredAgent = agentForModel(args.model, config);
-    if (inferredAgent && inferredAgent !== routed.agent) {
-      routed.agent = inferredAgent;
-      routed.effort =
-        args.effort ?? config[inferredAgent].models[routed.modelTier].effort ?? routed.effort;
-    }
-  }
-  if (args.agent !== "auto") {
-    routed.agent = args.agent;
-    const profile = config[routed.agent].models[args.tier ?? routed.modelTier];
-    routed.modelTier = args.tier ?? routed.modelTier;
-    routed.model = args.model ?? profile.model;
-    routed.effort = args.effort ?? profile.effort ?? routed.effort;
-  } else {
-    if (args.tier) {
-      routed.modelTier = args.tier;
-      const profile = config[routed.agent].models[args.tier];
-      routed.model = args.model ?? profile.model;
-      routed.effort = args.effort ?? profile.effort ?? routed.effort;
-    }
-    if (args.model) routed.model = args.model;
-    if (args.effort) routed.effort = args.effort;
-  }
+  let routed = applyRouteOverrides(
+    routeTask(args.task, config),
+    routeOverrides(args, config),
+    config,
+  );
   const singleRunId = `single-${Date.now().toString(36)}`;
   const logger = new RunLogger({
     runId: singleRunId,
@@ -361,6 +376,7 @@ async function execute(
   path?: string,
   askUser: (question: string) => Promise<string> = askTerminal,
 ) {
+  args = await clarifyRouting(args, config, askUser);
   const adaptive = args.adaptive || (!args.single && shouldOrchestrate(args.task, config));
   if (adaptive) {
     const result = await orchestrate(args.task, config, {
@@ -369,6 +385,7 @@ async function execute(
       session,
       logLevel: args.logLevel,
       askUser,
+      routeOverrides: routeOverrides(args, config),
     });
     if (session && !args.dryRun)
       appendTurn(session, {
@@ -454,7 +471,7 @@ function interactiveHelp(): string {
       `${commandColor("/new [title]")}        ${ui.gray("start a fresh session")}`,
       `${commandColor("/status")}             ${ui.gray("show session and run preferences")}`,
       `${commandColor("/mode auto|adaptive|single")} ${ui.gray("set workflow mode")}`,
-      `${commandColor("/agent auto|claude|codex")}   ${ui.gray("pin or auto-select a provider")}`,
+      `${commandColor("/agent auto|claude|codex|gemini|copilot")} ${ui.gray("pin or auto-select a provider")}`,
       `${commandColor("/tier auto|fast|balanced|deep")} ${ui.gray("set model tier")}`,
       `${commandColor("/log compact|live|verbose")}  ${ui.gray("set output detail")}`,
       `${commandColor("/models")}             ${ui.gray("show active model mapping")}`,
@@ -730,7 +747,7 @@ async function main() {
     console.log(divider("Doctor"));
     console.log(`${ui.gray("Config ")} ${path ? ui.cyan(path) : ui.yellow("built-in defaults")}`);
     console.log(`${ui.gray("History")} ${ui.cyan(historyPath(config.history))}`);
-    for (const agent of ["claude", "codex"] as const) {
+    for (const agent of ["claude", "codex", "gemini", "copilot"] as const) {
       const command = config[agent].command;
       const exists = commandExists(command);
       console.log(
@@ -769,7 +786,7 @@ async function main() {
     console.log(
       `${ui.bold("Output")}     ${ui.cyan(report.totals.outputTokens.toLocaleString())} ${ui.gray("tokens (included above)")}`,
     );
-    for (const agent of ["claude", "codex"] as const) {
+    for (const agent of ["claude", "codex", "gemini", "copilot"] as const) {
       console.log(
         `${agentColor(agent, agent.padEnd(6))} ${ui.gray("default model")} ${report.defaults[agent] ? ui.cyan(report.defaults[agent]!) : ui.yellow("not detected")}`,
       );

@@ -14,13 +14,23 @@ export const ui = {
   magenta: (s: string) => wrap("\x1b[35m", "\x1b[39m", s),
   gray: (s: string) => wrap("\x1b[90m", "\x1b[39m", s),
   white: (s: string) => wrap("\x1b[37m", "\x1b[39m", s),
+  rgb: (...args: [number, number, number, string] | [string]) => {
+    if (args.length === 1) return args[0];
+    const [red, green, blue, s] = args;
+    return wrap(`\x1b[38;2;${red};${green};${blue}m`, "\x1b[39m", s);
+  },
 };
 
 export function brand(s = "airo"): string {
   return ui.bold(ui.cyan(s));
 }
-export function agentColor(agent: "claude" | "codex", s: string): string {
-  return agent === "claude" ? ui.magenta(s) : ui.cyan(s);
+export function agentColor(agent: "claude" | "codex" | "gemini" | "copilot", s: string): string {
+  if (agent === "claude") return ui.magenta(s);
+  // Gemini uses Google's multicolor gradient; Google blue is the readable terminal accent.
+  if (agent === "gemini") return ui.rgb(66, 133, 244, s);
+  // GitHub's official Copilot Purple: #8534F3.
+  if (agent === "copilot") return ui.rgb(133, 52, 243, s);
+  return ui.cyan(s);
 }
 export function tierColor(tier: string): string {
   return tier === "fast" ? ui.green(tier) : tier === "balanced" ? ui.yellow(tier) : ui.red(tier);

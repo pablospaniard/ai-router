@@ -117,19 +117,32 @@ export async function runSetup(): Promise<string> {
     ];
     const claudeCandidates = candidatesFor("claude");
     const codexCandidates = candidatesFor("codex");
+    const geminiCandidates = candidatesFor("gemini");
+    const copilotCandidates = candidatesFor("copilot");
     const claudeModels = await pickModels(rl, "claude", claudeCandidates, claudeCandidates);
     const codexModels = await pickModels(rl, "codex", codexCandidates, codexCandidates);
+    const geminiModels = await pickModels(rl, "gemini", geminiCandidates, geminiCandidates);
+    const copilotModels = await pickModels(rl, "copilot", copilotCandidates, copilotCandidates);
     delete config.claude.allowedModels;
     delete config.codex.allowedModels;
+    delete config.gemini.allowedModels;
+    delete config.copilot.allowedModels;
 
     console.log("");
     console.log(divider("Tier mapping"));
     console.log(ui.dim("Map your selected models to fast / balanced / deep."));
-    for (const agent of ["claude", "codex"] as const) {
+    for (const agent of ["claude", "codex", "gemini", "copilot"] as const) {
       console.log("");
       console.log(ui.bold(agentColor(agent, agent.toUpperCase())));
       for (const tier of ["fast", "balanced", "deep"] as const) {
-        const candidates = agent === "claude" ? claudeModels : codexModels;
+        const candidates =
+          agent === "claude"
+            ? claudeModels
+            : agent === "codex"
+              ? codexModels
+              : agent === "gemini"
+                ? geminiModels
+                : copilotModels;
         config[agent].models[tier] = await pickTier(
           rl,
           agent,
@@ -144,7 +157,7 @@ export async function runSetup(): Promise<string> {
     console.log(divider("Usage comparison"));
     console.log(ui.dim("AIRO compares measured runs with each provider's normal default model."));
     const detectedDefaults = detectDefaultModels(config);
-    for (const agent of ["claude", "codex"] as const) {
+    for (const agent of ["claude", "codex", "gemini", "copilot"] as const) {
       const current = config[agent].defaultModel;
       const automatic = detectedDefaults[agent] ?? "not detected";
       const hint = current ? current : `auto: ${automatic}`;

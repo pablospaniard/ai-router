@@ -46,7 +46,7 @@ request → route → analyze → implement → test → review
 
 ## Get started
 
-1. Install Node.js 22 or newer, then install and sign in to Claude Code, Codex CLI, or both. AIRO uses those existing CLI logins—there are no AIRO API keys to create. The provider CLIs must be installed; AIRO invokes them as subprocesses and does not embed either provider.
+1. Install Node.js 22 or newer, then install and sign in to any supported provider CLI: Claude Code, Codex CLI, Gemini CLI, and/or GitHub Copilot CLI. AIRO uses those existing CLI logins—there are no AIRO API keys to create. The provider CLIs must be installed; AIRO invokes them as subprocesses.
 2. Install AIRO and check your local setup:
 
    ```bash
@@ -130,7 +130,7 @@ Out of the box, the automatic defaults are:
 | Codex CLI | `balanced` | `gpt-5.6-terra` | `medium` |
 | Codex CLI | `deep` | `gpt-5.6-sol` | `xhigh` |
 
-You can use any model your Claude Code or Codex CLI subscription makes available. AIRO does not maintain an allowlist. The setup wizard asks which models you have access to and lets you assign three of them to the automatic tiers; use it again whenever your access changes:
+You can use any model your provider CLI subscription makes available. AIRO does not maintain an allowlist. The setup wizard asks which models you have access to and lets you assign three of them to the automatic tiers; use it again whenever your access changes:
 
 ```bash
 airo setup
@@ -226,7 +226,7 @@ Type `/help` in the workspace for the complete command list. Tab completion is a
 
 To share a local file from the terminal, save it on disk, then use `/attach /path/to/file` before entering your task. You can also drag a supported file from an IDE such as VS Code directly into the running AIRO terminal; press Enter and AIRO will attach it and ask the provider to inspect it. Quoted paths and paths containing spaces are supported. AIRO passes the local path to the provider and clears the attachment after the next task. The file stays on disk; AIRO does not upload it itself. Supported extensions are PNG, JPEG, GIF, WebP, BMP, TIFF, PDF, Markdown (`.md`/`.markdown`), and JSON.
 
-If an agent needs a blocking decision, it can emit `AIROUTE_QUESTION:`. AIRO asks for input and resumes the same phase, with up to four clarification rounds per phase.
+If an agent needs a blocking decision, it can emit `AIROUTE_QUESTION:`. AIRO asks for input and resumes the same phase, with up to four clarification rounds per phase. If a provider instead reports a concrete permission, sandbox, or blocked-network failure in plain text, AIRO recognizes it and proactively asks for approval rather than ending the run.
 
 For Claude runs, answering exactly `approve` or `approved` resumes the same model and phase with `bypassPermissions` for that continuation attempt. Other answers preserve the configured permission mode.
 

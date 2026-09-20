@@ -1,4 +1,4 @@
-export type Agent = "claude" | "codex";
+export type Agent = "claude" | "codex" | "gemini" | "copilot";
 export type Policy = "balanced" | "claude-heavy" | "codex-heavy";
 export type ModelTier = "fast" | "balanced" | "deep";
 export type Effort = "auto" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
@@ -63,6 +63,8 @@ export interface RouterConfig {
   defaultAgent: Agent;
   claude: ProviderConfig;
   codex: ProviderConfig;
+  gemini: ProviderConfig;
+  copilot: ProviderConfig;
   history: HistoryConfig;
   orchestration: OrchestrationConfig;
   permissions: PermissionsConfig;
@@ -79,6 +81,7 @@ export interface ScoreReason {
 export interface RouteResult {
   agent: Agent;
   modelTier: ModelTier;
+  userRequestedAgent?: Agent;
   userRequestedTier?: ModelTier;
   userRequestedModel?: string;
   model: string;

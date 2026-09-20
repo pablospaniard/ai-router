@@ -107,9 +107,15 @@ export function parseInteractiveInput(input: string): InteractiveAction {
     return { kind: "error", message: "Usage: /mode auto|adaptive|single" };
   }
   if (command === "/agent") {
-    if (first === "auto" || first === "claude" || first === "codex")
+    if (
+      first === "auto" ||
+      first === "claude" ||
+      first === "codex" ||
+      first === "gemini" ||
+      first === "copilot"
+    )
       return { kind: "set-agent", value: first };
-    return { kind: "error", message: "Usage: /agent auto|claude|codex" };
+    return { kind: "error", message: "Usage: /agent auto|claude|codex|gemini|copilot" };
   }
   if (command === "/tier") {
     if (first === "auto") return { kind: "set-tier", value: undefined };

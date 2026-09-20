@@ -105,7 +105,125 @@ const MOST_POWERFUL_MODEL =
 const AVOID_MOST_POWERFUL_MODEL =
   /\b(?:do\s+not|don't|never|avoid)\s+use\s+(?:the\s+)?(?:most\s+(?:powerful|powerfull|capable)|strongest)\s+(?:available\s+)?model\b/i;
 const EXPLICIT_MODEL =
-  /\b(?:use|using|choose|pick|select|with|model)\s+(?:the\s+)?["'`]?((?:(?:gpt|codex|claude)[-._][a-z0-9][-._a-z0-9]*|o[1-9](?:[-._][a-z0-9][-._a-z0-9]*)?|haiku|sonnet|opus))["'`]?\b/i;
+  /\b((?:(?:gpt|codex|claude|gemini)[-._][a-z0-9][-._a-z0-9]*|o[1-9](?:[-._][a-z0-9][-._a-z0-9]*)?|haiku|sonnet|opus))\b/gi;
+
+export interface UserRoutingRequest {
+  intent: boolean;
+  automatic?: boolean;
+  agent?: Agent;
+  model?: string;
+  tier?: ModelTier;
+  unresolved?: string;
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function configuredModelIn(
+  text: string,
+  config: RouterConfig,
+): { agent: Agent; model: string; tier: ModelTier } | undefined {
+  const matches: Array<{ index: number; agent: Agent; model: string; tier: ModelTier }> = [];
+  for (const agent of ["claude", "codex", "gemini", "copilot"] as const) {
+    for (const tier of ["fast", "balanced", "deep"] as const) {
+      const model = config[agent].models[tier].model;
+      const flexible = escapeRegex(model).replace(/[-._]+/g, "[-._\\s]+");
+      const match = new RegExp(`\\b${flexible}\\b`, "i").exec(text);
+      if (match) matches.push({ index: match.index, agent, model, tier });
+    }
+  }
+  return matches.sort((a, b) => b.index - a.index)[0];
+}
+
+function routingClauses(task: string): Array<{ index: number; text: string; switchLike: boolean }> {
+  const clauses: Array<{ index: number; text: string; switchLike: boolean }> = [];
+  const patterns: Array<[RegExp, boolean]> = [
+    [
+      /\b(?:switch|change|move|route)(?:\s+(?:it|this|the\s+task))?\s+(?:over\s+)?to\s+([^,;.!?\n]+)/gi,
+      true,
+    ],
+    [
+      /\b(?:use|using|choose|pick|select|run(?:\s+it)?\s+with|go\s+with|with)\s+([^,;.!?\n]+)/gi,
+      false,
+    ],
+    [/\bmodel\s+([a-z0-9][a-z0-9._-]*)\b/gi, false],
+  ];
+  for (const [pattern, switchLike] of patterns) {
+    for (const match of task.matchAll(pattern)) {
+      const prefix = task.slice(Math.max(0, (match.index ?? 0) - 20), match.index ?? 0);
+      if (/(?:do\s+not|don't|never|avoid)\s*$/i.test(prefix)) continue;
+      clauses.push({ index: match.index ?? 0, text: match[1].trim(), switchLike });
+    }
+  }
+  return clauses.sort((a, b) => a.index - b.index);
+}
+
+export function userRoutingRequest(task: string, config: RouterConfig): UserRoutingRequest {
+  let latest: UserRoutingRequest = { intent: false };
+  for (const clause of routingClauses(task)) {
+    const text = clause.text.replace(/^(?:use|using)\s+/i, "").trim();
+    const lower = text.toLowerCase();
+    const knownAgent = (["claude", "codex", "gemini", "copilot"] as const).find((agent) =>
+      new RegExp(`\\b${agent}\\b`, "i").test(text),
+    );
+    const configured = configuredModelIn(text, config);
+    const namedModelMatches = [...text.matchAll(EXPLICIT_MODEL)];
+    const namedModel = namedModelMatches.at(-1)?.[1];
+    const automatic = /\b(?:auto|automatic|automatically)\b/i.test(text);
+    let tier: ModelTier | undefined;
+    if (/\b(?:deep|most\s+(?:powerful|capable)|strongest)\b/i.test(text)) tier = "deep";
+    else if (/\bbalanced\b/i.test(text)) tier = "balanced";
+    else if (/\b(?:fast|fastest|quick|quickest|cheapest)\b/i.test(text)) tier = "fast";
+
+    const alias = /\b(haiku|sonnet|opus|flash|pro|luna|terra|sol)\b/i.exec(text)?.[1].toLowerCase();
+    const aliasTier: ModelTier | undefined =
+      alias && ["haiku", "flash", "luna"].includes(alias)
+        ? "fast"
+        : alias && ["sonnet", "pro", "terra"].includes(alias)
+          ? "balanced"
+          : alias && ["opus", "sol"].includes(alias)
+            ? "deep"
+            : undefined;
+    tier ??= configured?.tier ?? aliasTier;
+
+    let agent = knownAgent ?? configured?.agent;
+    let model = namedModel ?? configured?.model;
+    if (!agent && model) agent = agentForModel(model, config);
+    if (knownAgent && aliasTier && (!namedModel || namedModel.toLowerCase() === alias))
+      model = config[knownAgent].models[aliasTier].model;
+    if (knownAgent && configured && configured.agent !== knownAgent) {
+      model = config[knownAgent].models[configured.tier].model;
+      tier = configured.tier;
+    }
+
+    const recognized = Boolean(automatic || agent || model || tier);
+    const excludedSwitchTarget =
+      /\b(?:branch|file|folder|directory|tab|theme|language|mode)\b/i.test(text);
+    const explicitRoutingNoun =
+      /\b(?:model|provider|agent|tier)\b/i.test(text) && !/\bprovider['’]s\b/i.test(text);
+    const intent =
+      recognized || (clause.switchLike && !excludedSwitchTarget) || explicitRoutingNoun;
+    if (!intent) continue;
+
+    let unresolved: string | undefined;
+    if (!recognized) unresolved = text;
+    else if (/\bmodel\b/i.test(text) && agent && !model && !tier) {
+      const remainder = lower
+        .replace(/\b(?:the|a|an|model|provider|agent|tier|claude|codex|gemini|copilot)\b/g, "")
+        .trim();
+      if (remainder) unresolved = text;
+    }
+    latest = { intent: true, automatic, agent, model, tier, unresolved };
+  }
+  return latest;
+}
+
+export function routingClarification(task: string, config: RouterConfig): string | undefined {
+  const request = userRoutingRequest(task, config);
+  if (!request.unresolved) return undefined;
+  return `I couldn't identify the requested provider, model, or tier from "${request.unresolved}". Which should I use? For example: "Claude with Opus", "Codex deep", "Gemini fast", or "automatic routing".`;
+}
 
 export function requestedModelTier(task: string): ModelTier | undefined {
   if (AVOID_MOST_POWERFUL_MODEL.test(task)) return undefined;
@@ -114,7 +232,7 @@ export function requestedModelTier(task: string): ModelTier | undefined {
 }
 
 export function agentForModel(model: string, config: RouterConfig): Agent | undefined {
-  for (const agent of ["claude", "codex"] as const) {
+  for (const agent of ["claude", "codex", "gemini", "copilot"] as const) {
     if (
       Object.values(config[agent].models).some(
         (profile) => profile.model.toLowerCase() === model.toLowerCase(),
@@ -124,6 +242,8 @@ export function agentForModel(model: string, config: RouterConfig): Agent | unde
   }
   if (/^(?:claude(?:-|$)|haiku$|sonnet$|opus$)/i.test(model)) return "claude";
   if (/^(?:gpt(?:-|$)|codex(?:-|$)|o[1-9](?:-|$))/i.test(model)) return "codex";
+  if (/^gemini(?:-|$)/i.test(model)) return "gemini";
+  if (/^(?:claude|gpt)-/i.test(model)) return "copilot";
   return undefined;
 }
 
@@ -131,13 +251,10 @@ export function requestedModel(
   task: string,
   config: RouterConfig,
 ): { agent: Agent; model: string } | undefined {
-  const match = EXPLICIT_MODEL.exec(task);
-  if (!match) return undefined;
-  const prefix = task.slice(Math.max(0, match.index - 16), match.index);
-  if (/(?:do\s+not|don't|never|avoid)\s*$/i.test(prefix)) return undefined;
-  const model = match[1];
-  const agent = agentForModel(model, config);
-  return agent ? { agent, model } : undefined;
+  const request = userRoutingRequest(task, config);
+  return request.model && request.agent
+    ? { agent: request.agent, model: request.model }
+    : undefined;
 }
 
 export function routeTask(task: string, config: RouterConfig): RouteResult {
@@ -147,7 +264,8 @@ export function routeTask(task: string, config: RouterConfig): RouteResult {
   let forcedTier: ModelTier | undefined;
   let forcedEffort: Effort | undefined;
   let matchedRule: string | undefined;
-  const userRequestedTier = requestedModelTier(task);
+  const naturalRequest = userRoutingRequest(task, config);
+  const userRequestedTier = naturalRequest.tier ?? requestedModelTier(task);
   const explicitModel = requestedModel(task, config);
 
   for (const rule of config.rules) {
@@ -181,22 +299,29 @@ export function routeTask(task: string, config: RouterConfig): RouteResult {
   if (config.policy === "codex-heavy") add(reasons, "codex", 2, "codex-heavy policy");
 
   const learned = learningHints(task, config.history);
-  if (learned.agentBoosts.claude !== 0)
-    add(reasons, "claude", learned.agentBoosts.claude, "history feedback on similar tasks");
-  if (learned.agentBoosts.codex !== 0)
-    add(reasons, "codex", learned.agentBoosts.codex, "history feedback on similar tasks");
+  const agents: Agent[] = ["claude", "codex", "gemini", "copilot"];
+  for (const candidate of agents) {
+    const boost = learned.agentBoosts[candidate];
+    if (boost !== 0) add(reasons, candidate, boost, "history feedback on similar tasks");
+  }
   modelReasons.push(...learned.notes);
 
-  const claudeScore = reasons.filter((r) => r.agent === "claude").reduce((s, r) => s + r.points, 0);
-  const codexScore = reasons.filter((r) => r.agent === "codex").reduce((s, r) => s + r.points, 0);
-  const agent =
-    explicitModel?.agent ??
-    forcedAgent ??
-    (claudeScore === codexScore
-      ? config.defaultAgent
-      : claudeScore > codexScore
-        ? "claude"
-        : "codex");
+  const scores = Object.fromEntries(
+    agents.map((candidate) => [
+      candidate,
+      reasons
+        .filter((reason) => reason.agent === candidate)
+        .reduce((sum, reason) => sum + reason.points, 0),
+    ]),
+  ) as Record<Agent, number>;
+  const claudeScore = scores.claude;
+  const codexScore = scores.codex;
+  const bestScore = Math.max(...Object.values(scores));
+  const highestScoringAgents = agents.filter((candidate) => scores[candidate] === bestScore);
+  const learnedAgent = highestScoringAgents.includes(config.defaultAgent)
+    ? config.defaultAgent
+    : highestScoringAgents[0];
+  const agent = explicitModel?.agent ?? naturalRequest.agent ?? forcedAgent ?? learnedAgent;
 
   let complexity = 2;
   if (words >= 20) complexity += 1;
@@ -228,14 +353,13 @@ export function routeTask(task: string, config: RouterConfig): RouteResult {
   const effort = forcedEffort ?? profile.effort ?? effortForTier(modelTier);
   modelReasons.unshift(`complexity ${complexity}/5 → ${modelTier} tier`);
   if (userRequestedTier)
-    modelReasons.unshift(
-      `user explicitly requested the most powerful model → ${userRequestedTier} tier`,
-    );
+    modelReasons.unshift(`user explicitly requested the ${userRequestedTier} tier`);
   if (explicitModel) modelReasons.unshift(`user explicitly requested ${explicitModel.model}`);
 
   return {
     agent,
     modelTier,
+    userRequestedAgent: naturalRequest.agent,
     userRequestedTier,
     userRequestedModel: explicitModel?.model,
     model: explicitModel?.model ?? profile.model,

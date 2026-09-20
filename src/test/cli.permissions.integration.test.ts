@@ -39,7 +39,7 @@ function runCli(cwd: string, home: string, input = ""): ReturnType<typeof spawnS
   );
 }
 
-test("terminal CLI asks before elevating a blocked Codex action", () => {
+test("terminal CLI proactively asks before elevating a provider-reported access failure", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-cli-permission-"));
   const home = path.join(dir, "home");
   const count = path.join(dir, "count");
@@ -59,7 +59,7 @@ const n = fs.existsSync(countFile) ? Number(fs.readFileSync(countFile, "utf8")) 
 fs.writeFileSync(countFile, String(n + 1));
 fs.appendFileSync(argsFile, JSON.stringify(args) + "\\n");
 const text = n === 0
-  ? "AIROUTE_QUESTION: Permission required to perform protected action. Approve?"
+  ? "I couldn't retrieve the PR comments: GitHub API access is currently unavailable (gh pr view failed with a connection error)."
   : "Protected action completed.";
 console.log(JSON.stringify({type:"item.completed",item:{type:"agent_message",text}}));
 console.log(JSON.stringify({type:"turn.completed",usage:{input_tokens:2,output_tokens:1}}));
@@ -70,7 +70,10 @@ console.log(JSON.stringify({type:"turn.completed",usage:{input_tokens:2,output_t
     writeConfig(home, codex, "prompt");
     const result = runCli(dir, home, "approve\n");
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /Permission required to perform protected action/);
+    assert.match(
+      result.stdout,
+      /Permission required to access GitHub and retry the blocked action/,
+    );
     assert.match(result.stdout, /approval received.*elevated permissions/);
     assert.match(result.stdout, /Protected action completed/);
     const invocations = fs
