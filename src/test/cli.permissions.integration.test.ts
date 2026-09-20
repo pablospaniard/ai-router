@@ -59,7 +59,7 @@ const n = fs.existsSync(countFile) ? Number(fs.readFileSync(countFile, "utf8")) 
 fs.writeFileSync(countFile, String(n + 1));
 fs.appendFileSync(argsFile, JSON.stringify(args) + "\\n");
 const text = n === 0
-  ? "I couldn't retrieve the PR comments: GitHub API access is currently unavailable (gh pr view failed with a connection error)."
+  ? "AIROUTE_QUESTION: GitHub API access is blocked, so I can't open the PR. Please enable network access."
   : "Protected action completed.";
 console.log(JSON.stringify({type:"item.completed",item:{type:"agent_message",text}}));
 console.log(JSON.stringify({type:"turn.completed",usage:{input_tokens:2,output_tokens:1}}));
@@ -84,7 +84,9 @@ console.log(JSON.stringify({type:"turn.completed",usage:{input_tokens:2,output_t
     assert.equal(invocations.length, 2);
     assert.match(invocations[0], /--sandbox workspace-write/);
     assert.match(invocations[0], /sandbox_workspace_write\.network_access=true/);
+    assert.match(invocations[0], /--ask-for-approval never/);
     assert.match(invocations[1], /--sandbox danger-full-access/);
+    assert.match(invocations[1], /--ask-for-approval never/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
