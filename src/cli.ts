@@ -464,7 +464,8 @@ async function execute(
   path?: string,
   askUser: (question: string) => Promise<string> = askTerminal,
 ) {
-  recordImplicitCorrection(config.history, session?.turns.at(-1)?.runId, args.task);
+  if (!args.dryRun)
+    recordImplicitCorrection(config.history, session?.turns.at(-1)?.runId, args.task);
   args = await clarifyRouting(args, config, askUser);
   const adaptive = args.adaptive || (!args.single && shouldOrchestrate(args.task, config));
   if (adaptive) {

@@ -344,11 +344,15 @@ export function learningHints(task: string, config: HistoryConfig): LearningHint
     .slice(0, 30);
 
   let totalWeight = 0;
+  const agentSamples: Record<Agent, number> = { claude: 0, codex: 0, gemini: 0, copilot: 0 };
+  const tierSamples: Record<ModelTier, number> = { fast: 0, balanced: 0, deep: 0 };
   for (const { r, sim, reward } of similar) {
     const age = Math.max(0, now - new Date(r.timestamp).getTime());
     const decay = 2 ** (-age / halfLife);
     const weight = sim * reward.confidence * (reward.explicit ? Math.max(0.5, decay) : decay);
     totalWeight += weight;
+    agentSamples[r.agent] += weight;
+    tierSamples[r.modelTier] += weight;
     empty.agentBoosts[r.agent] = Math.max(
       -maxAgentBoost,
       Math.min(maxAgentBoost, empty.agentBoosts[r.agent] + reward.value * 4 * weight),
@@ -367,11 +371,17 @@ export function learningHints(task: string, config: HistoryConfig): LearningHint
     empty.routeSamples[key] = (empty.routeSamples[key] ?? 0) + weight;
   }
 
+  const minimumSamples = config.minimumSamples ?? 2;
+  for (const agent of Object.keys(agentSamples) as Agent[])
+    if (agentSamples[agent] < minimumSamples) empty.agentBoosts[agent] = 0;
+  for (const tier of Object.keys(tierSamples) as ModelTier[])
+    if (tierSamples[tier] < minimumSamples) empty.tierBoosts[tier] = 0;
+
   for (const key of Object.keys(empty.routeUtilities))
     empty.routeUtilities[key] /= Math.max(0.001, empty.routeSamples[key]);
 
   empty.observations = similar.length;
-  empty.confidence = Math.min(1, totalWeight / Math.max(1, config.minimumSamples ?? 2));
+  empty.confidence = Math.min(1, totalWeight / Math.max(1, minimumSamples));
 
   if (similar.length) {
     const best = similar[0];

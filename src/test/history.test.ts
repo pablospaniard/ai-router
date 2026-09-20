@@ -79,6 +79,7 @@ test("derives positive and negative learning hints from similar feedback", () =>
     enabled: true,
     learningEnabled: true,
     similarityThreshold: 0.2,
+    minimumSamples: 0.48,
     path: path.join(dir, "history.jsonl"),
   };
   const base: HistoryRecord = {
@@ -109,6 +110,44 @@ test("derives positive and negative learning hints from similar feedback", () =>
     assert.ok(hints.agentBoosts.codex < 0);
     assert.match(hints.notes[0], /2 similar/);
     assert.deepEqual(learningHints("anything", { ...config, learningEnabled: false }).notes, []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("requires enough effective samples before applying agent and tier boosts", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-minimum-samples-"));
+  const config: HistoryConfig = {
+    enabled: true,
+    learningEnabled: true,
+    similarityThreshold: 0.2,
+    minimumSamples: 1.9,
+    path: path.join(dir, "history.jsonl"),
+  };
+  const record: HistoryRecord = {
+    id: "first",
+    timestamp: "2099-01-01T00:00:00.000Z",
+    cwd: "/repo",
+    task: "fix parser bug",
+    agent: "claude",
+    modelTier: "deep",
+    model: "model",
+    effort: "high",
+    complexity: 2,
+    exitCode: 0,
+    durationMs: 1,
+    feedback: "good",
+  };
+  try {
+    appendHistory(config, record);
+    const belowThreshold = learningHints(record.task, config);
+    assert.equal(belowThreshold.agentBoosts.claude, 0);
+    assert.equal(belowThreshold.tierBoosts.deep, 0);
+
+    appendHistory(config, { ...record, id: "second" });
+    const qualified = learningHints(record.task, config);
+    assert.ok(qualified.agentBoosts.claude > 0);
+    assert.ok(qualified.tierBoosts.deep > 0);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

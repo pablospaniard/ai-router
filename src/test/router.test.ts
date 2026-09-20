@@ -244,9 +244,10 @@ test("routes with learned feedback for Gemini and Copilot", () => {
     for (const agent of ["gemini", "copilot"] as const) {
       const current = config();
       current.history.path = path.join(dir, `${agent}.jsonl`);
+      current.history.minimumSamples = 0.9;
       appendHistory(current.history, {
         id: agent,
-        timestamp: new Date().toISOString(),
+        timestamp: "2099-01-01T00:00:00.000Z",
         cwd: process.cwd(),
         task: `repair ${agent} parser`,
         agent,
