@@ -234,7 +234,7 @@ function providerAvailable(agent: Agent, config: RouterConfig, ruledOut: Set<Age
   return !ruledOut.has(agent) && commandExists(config[agent].command);
 }
 
-function fallbackIfMissing(
+export function fallbackIfMissing(
   route: RouteResult,
   config: RouterConfig,
   ruledOut: Set<Agent> = new Set(),
@@ -245,7 +245,13 @@ function fallbackIfMissing(
   if (!providerAvailable(fallback, config, ruledOut))
     throw new Error("Neither Claude Code nor Codex CLI is available in PATH");
   const p = config[fallback].models[route.modelTier];
-  return { ...route, agent: fallback, model: p.model, effort: p.effort ?? route.effort };
+  return {
+    ...route,
+    agent: fallback,
+    model: p.model,
+    effort: p.effort ?? route.effort,
+    modelReasons: [...route.modelReasons, `provider missing → fallback ${fallback}`],
+  };
 }
 
 /**
@@ -263,7 +269,10 @@ export function fallbackProvider(
   if (route.agentPinned) return undefined;
   const fallback: Agent = route.agent === "claude" ? "codex" : "claude";
   if (!providerAvailable(fallback, config, ruledOut)) return undefined;
-  if (inspectAccount(fallback, config)?.authenticated === false) return undefined;
+  if (inspectAccount(fallback, config)?.authenticated === false) {
+    ruledOut.add(fallback);
+    return undefined;
+  }
   const profile = config[fallback].models[route.modelTier];
   return {
     ...route,
@@ -360,6 +369,7 @@ export async function orchestrate(
     logger.phaseStart(logMeta);
     const started = Date.now();
     let effectivePrompt = prompt;
+    let providersExhausted = false;
     let result = await runAgent(route, effectivePrompt, config, {
       headless: true,
       capture: true,
@@ -385,11 +395,22 @@ export async function orchestrate(
           logger,
           logMeta,
         });
+        if (!result.question && isProviderUnavailableError(result.output, result.exitCode)) {
+          const fallbackFailure = providerFailureReason(result.output, result.exitCode);
+          ruledOut.add(route.agent);
+          providersExhausted = true;
+          result = { ...result, exitCode: result.exitCode || 1 };
+          logger.status(
+            `${route.agent} ${fallbackFailure} failure detected → no provider remains available`,
+          );
+        }
       } else if (route.agentPinned) {
         logger.status(
           `${route.agent} ${failure} failure detected → keeping the explicitly selected provider (no fallback)`,
         );
       } else {
+        providersExhausted = true;
+        result = { ...result, exitCode: result.exitCode || 1 };
         logger.status(
           `${route.agent} ${failure} failure detected → no other provider is available to take over`,
         );
@@ -491,7 +512,7 @@ export async function orchestrate(
         }));
     }
 
-    if (result.question) break;
+    if (result.question || providersExhausted) break;
 
     if (
       needsRecovery(execution) &&

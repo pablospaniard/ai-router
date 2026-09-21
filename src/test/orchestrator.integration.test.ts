@@ -257,6 +257,39 @@ console.log(JSON.stringify({type:"result", subtype:"success", result:"done"}));`
   }
 });
 
+test("rules out a fallback that also becomes unavailable", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-orchestrate-fallback-failure-"));
+  const codexRuns = path.join(dir, "codex-runs");
+  const claudeRuns = path.join(dir, "claude-runs");
+  const codex = executable(
+    path.join(dir, "codex"),
+    `const fs = require("node:fs");
+fs.appendFileSync(${JSON.stringify(codexRuns)}, "run\\n");
+console.log(JSON.stringify({type:"turn.failed",error:{message:"unexpected status 401 Unauthorized: Missing bearer"}}));
+process.exit(1);`,
+  );
+  const claude = executable(
+    path.join(dir, "claude"),
+    `const fs = require("node:fs");
+if (process.argv.includes("auth")) { console.log(JSON.stringify({loggedIn:true})); process.exit(0); }
+fs.appendFileSync(${JSON.stringify(claudeRuns)}, "run\\n");
+console.log(JSON.stringify({type:"result", subtype:"success", result:"Claude usage limit reached."}));`,
+  );
+  try {
+    const config = testConfig(claude, codex);
+    config.orchestration.maxPhases = 4;
+    const result = await orchestrate("Rename a type in one file", config);
+
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.phases.length, 1, "no later phase should retry an unavailable provider");
+    assert.equal(result.phases[0].route.agent, "claude");
+    assert.equal(fs.readFileSync(codexRuns, "utf8").trim().split("\n").length, 1);
+    assert.equal(fs.readFileSync(claudeRuns, "utf8").trim().split("\n").length, 1);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("fails instead of substituting a provider when the pinned one is missing", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-orchestrate-pinned-missing-"));
   const codex = executable(

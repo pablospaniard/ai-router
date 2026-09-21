@@ -31,11 +31,11 @@ import {
 import {
   applyRouteOverrides,
   applyRoutePreferences,
+  fallbackIfMissing,
   fallbackProvider,
   orchestrate,
   providerFailureReason,
   shouldOrchestrate,
-  unavailableProviderError,
 } from "./orchestrator.js";
 import { agentForModel, routeTask, routingClarification } from "./router.js";
 import {
@@ -368,10 +368,15 @@ async function singleRun(
   }
   if (args.dryRun)
     return { exitCode: 0, runId: "dry-run", summaries: [`single:${routed.agent}/${routed.model}`] };
-  if (!commandExists(config[routed.agent].command))
-    throw routed.agentPinned
-      ? unavailableProviderError(routed, config)
-      : new Error(`${config[routed.agent].command} not available in PATH`);
+  if (!commandExists(config[routed.agent].command)) {
+    const unavailable = routed;
+    routed = fallbackIfMissing(routed, config);
+    Object.assign(logMeta, { agent: routed.agent, model: routed.model, effort: routed.effort });
+    logger.providerSwitch(
+      logMeta,
+      `${unavailable.agent} is not available in PATH → falling back to ${routed.agent}/${routed.model}`,
+    );
+  }
   const started = Date.now();
   const basePrompt = singleRunPrompt(args.task, session);
   let effectivePrompt = basePrompt;
