@@ -1,9 +1,21 @@
 import * as vscode from "vscode";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { renderWebview } from "./webview";
+
+function loginShellEnvironment(): NodeJS.ProcessEnv {
+  const shell = process.env.SHELL || "/bin/sh";
+  const result = spawnSync(shell, ["-ilc", "env"], { encoding: "utf8", timeout: 5000 });
+  const environment: NodeJS.ProcessEnv = { ...process.env };
+  if (result.error || result.status !== 0) return environment;
+  for (const line of (result.stdout || "").split(/\r?\n/)) {
+    const separator = line.indexOf("=");
+    if (separator > 0) environment[line.slice(0, separator)] = line.slice(separator + 1);
+  }
+  return environment;
+}
 
 type Message = {
   type: string;
@@ -571,7 +583,7 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
             shell: false,
             windowsHide: true,
             stdio: ["pipe", "pipe", "pipe"],
-            env: { ...process.env, NO_COLOR: "1", AIRO_STREAM_PROTOCOL: "1" },
+            env: { ...loginShellEnvironment(), NO_COLOR: "1", AIRO_STREAM_PROTOCOL: "1" },
           },
         );
         chat.child = child;
@@ -965,7 +977,7 @@ function runCommand(args: string[]): Promise<{ code: number | null; output: stri
         cwd: folder.uri.fsPath,
         shell: false,
         windowsHide: true,
-        env: { ...process.env, NO_COLOR: "1" },
+        env: { ...loginShellEnvironment(), NO_COLOR: "1" },
       },
     );
     let output = "";

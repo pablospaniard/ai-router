@@ -43,6 +43,19 @@ const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const node_os_1 = __importDefault(require("node:os"));
 const webview_1 = require("./webview");
+function loginShellEnvironment() {
+    const shell = process.env.SHELL || "/bin/sh";
+    const result = (0, node_child_process_1.spawnSync)(shell, ["-ilc", "env"], { encoding: "utf8", timeout: 5000 });
+    const environment = { ...process.env };
+    if (result.error || result.status !== 0)
+        return environment;
+    for (const line of (result.stdout || "").split(/\r?\n/)) {
+        const separator = line.indexOf("=");
+        if (separator > 0)
+            environment[line.slice(0, separator)] = line.slice(separator + 1);
+    }
+    return environment;
+}
 function activate(context) {
     const provider = new SidebarProvider();
     const attachmentDropProvider = new AttachmentDropProvider(provider);
@@ -523,7 +536,7 @@ class SidebarProvider {
                     shell: false,
                     windowsHide: true,
                     stdio: ["pipe", "pipe", "pipe"],
-                    env: { ...process.env, NO_COLOR: "1", AIRO_STREAM_PROTOCOL: "1" },
+                    env: { ...loginShellEnvironment(), NO_COLOR: "1", AIRO_STREAM_PROTOCOL: "1" },
                 });
                 chat.child = child;
                 started = true;
@@ -905,7 +918,7 @@ function runCommand(args) {
             cwd: folder.uri.fsPath,
             shell: false,
             windowsHide: true,
-            env: { ...process.env, NO_COLOR: "1" },
+            env: { ...loginShellEnvironment(), NO_COLOR: "1" },
         });
         let output = "";
         child.stdout.on("data", (data) => (output += data.toString()));

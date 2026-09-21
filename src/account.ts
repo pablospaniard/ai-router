@@ -14,6 +14,40 @@ export interface ProviderAccount {
   defaultModel?: string;
 }
 
+function resolveCommand(command: string): { command?: string; error?: string } {
+  const shell = process.env.SHELL || "/bin/sh";
+  const result = spawnSync(shell, ["-ilc", 'command -v -- "$1"', "airo", command], {
+    encoding: "utf8",
+    timeout: 5000,
+  });
+  if (result.error) return { error: result.error.message };
+  const resolved = (result.stdout || "")
+    .trim()
+    .split(/\r?\n/)
+    .map((line: string) => line.trim())
+    .filter(Boolean)
+    .at(-1);
+  return resolved ? { command: resolved } : { error: `${command} not found in PATH` };
+}
+
+function runProviderCommand(
+  command: string,
+  args: string[],
+):
+  | { result: ReturnType<typeof spawnSync>; command?: string; error?: string }
+  | { result?: undefined; command?: string; error: string } {
+  const resolved = resolveCommand(command);
+  if (!resolved.command) return { error: resolved.error ?? `${command} not found in PATH` };
+  const shell = process.env.SHELL || "/bin/sh";
+  return {
+    command: resolved.command,
+    result: spawnSync(shell, ["-ilc", 'exec "$1" "$2" "$3"', "airo", resolved.command, ...args], {
+      encoding: "utf8",
+      timeout: 5000,
+    }),
+  };
+}
+
 function readJson(file: string): any | undefined {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -59,7 +93,16 @@ export function detectDefaultModels(
 }
 
 function inspectClaude(command: string, defaultModel?: string): ProviderAccount {
-  const result = spawnSync(command, ["auth", "status"], { encoding: "utf8", timeout: 5000 });
+  const checked = runProviderCommand(command, ["auth", "status"]);
+  if (!checked.result)
+    return {
+      agent: "claude",
+      available: false,
+      authenticated: false,
+      status: checked.error ?? `${command} not found in PATH`,
+      defaultModel,
+    };
+  const result = checked.result;
   if (result.error)
     return {
       agent: "claude",
@@ -93,7 +136,16 @@ function inspectClaude(command: string, defaultModel?: string): ProviderAccount 
 }
 
 function inspectCodex(command: string, defaultModel?: string): ProviderAccount {
-  const result = spawnSync(command, ["login", "status"], { encoding: "utf8", timeout: 5000 });
+  const checked = runProviderCommand(command, ["login", "status"]);
+  if (!checked.result)
+    return {
+      agent: "codex",
+      available: false,
+      authenticated: false,
+      status: checked.error ?? `${command} not found in PATH`,
+      defaultModel,
+    };
+  const result = checked.result;
   if (result.error)
     return {
       agent: "codex",
