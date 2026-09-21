@@ -5,6 +5,42 @@ import path from "node:path";
 import os from "node:os";
 import { renderWebview } from "./webview";
 
+let loginShellEnvironmentPromise: Promise<NodeJS.ProcessEnv> | undefined;
+
+function loginShellEnvironment(): Promise<NodeJS.ProcessEnv> {
+  if (loginShellEnvironmentPromise) return loginShellEnvironmentPromise;
+  loginShellEnvironmentPromise = new Promise((resolve) => {
+    if (process.platform === "win32") return resolve({ ...process.env });
+    const shell = process.env.SHELL || "/bin/sh";
+    const marker = "__AIRO_ENV_BEGIN__";
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(shell, ["-ilc", `printf '${marker}\\0'; env -0`], {
+        stdio: ["ignore", "pipe", "ignore"],
+        windowsHide: true,
+      });
+    } catch {
+      return resolve({ ...process.env });
+    }
+    let output = "";
+    const fallback = (): NodeJS.ProcessEnv => ({ ...process.env });
+    child.stdout?.on("data", (data: Buffer) => (output += data.toString()));
+    child.on("error", () => resolve(fallback()));
+    child.on("close", (code) => {
+      if (code !== 0) return resolve(fallback());
+      const start = output.indexOf(`${marker}\0`);
+      if (start < 0) return resolve(fallback());
+      const environment: NodeJS.ProcessEnv = fallback();
+      for (const entry of output.slice(start + marker.length + 1).split("\0")) {
+        const separator = entry.indexOf("=");
+        if (separator > 0) environment[entry.slice(0, separator)] = entry.slice(separator + 1);
+      }
+      resolve(environment);
+    });
+  });
+  return loginShellEnvironmentPromise;
+}
+
 type Message = {
   type: string;
   text?: string;
@@ -553,131 +589,136 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     chat.stopping = false;
     chat.awaitingInput = false;
     this.postAllStates();
-    return new Promise((resolve) => {
-      let output = "";
-      let humanOutput = "";
-      let stdoutBuffer = "";
-      let stderrBuffer = "";
-      let hasFinal = false;
-      const pendingArtifacts: Promise<void>[] = [];
-      let started = false;
-      let child: ChildProcessWithoutNullStreams;
-      try {
-        child = spawn(
-          vscode.workspace.getConfiguration("airo").get<string>("command", "airo"),
-          args,
-          {
-            cwd: folder.uri.fsPath,
-            shell: false,
-            windowsHide: true,
-            stdio: ["pipe", "pipe", "pipe"],
-            env: { ...process.env, NO_COLOR: "1", AIRO_STREAM_PROTOCOL: "1" },
-          },
-        );
-        chat.child = child;
-        started = true;
-      } catch (error) {
-        chat.running = false;
-        this.postAllStates();
-        this.notice(`Could not start AIRO: ${String(error)}`, chatId);
-        return resolve({ code: null, output, started });
-      }
-
-      const handleProtocol = (event: ProtocolEvent): void => {
-        if (event.type === "route" && event.provider && event.model && event.tier) {
-          if (event.sessionId && !chat.session) {
-            chat.session = {
-              sessionId: event.sessionId,
-              description: chat.title,
-              updatedAt: new Date().toISOString(),
-              turnCount: 0,
-            };
-            chat.activeSession = true;
-            if (chatId === this.activeChatId) {
-              this.session = chat.session;
-              this.activeSession = true;
-            }
-          }
-          this.postToChat(chatId, {
-            type: "route",
-            provider: event.provider,
-            model: event.model,
-            tier: event.tier,
-          });
-        } else if ((event.type === "input" || event.type === "permission") && event.question) {
-          chat.awaitingInput = true;
-          this.postToChat(chatId, {
-            type: event.type === "permission" ? "permission" : "interaction",
-            text: event.question,
-          });
-          this.postState(chatId);
-        } else if (event.type === "phase" && event.kind && event.state) {
-          this.postToChat(chatId, {
-            type: "phase",
-            state: event.state,
-            kind: event.kind,
-            title: event.title,
-            provider: event.provider,
-            model: event.model,
-            tier: event.tier,
-            phaseIndex: event.phaseIndex,
-            phaseTotal: event.phaseTotal,
-          });
-        } else if (event.type === "final" && event.text) {
-          hasFinal = true;
-          this.postToChat(chatId, { type: "final", text: event.text });
-        } else if (event.type === "failure" && event.text) {
-          hasFinal = true;
-          this.postToChat(chatId, { type: "failure", text: event.text });
-        } else if (event.type === "artifact" && event.path) {
-          pendingArtifacts.push(this.postArtifact(chatId, event));
-        }
-      };
-      const handleLine = (line: string, newline: boolean): void => {
-        if (line.startsWith("AIRO_EVENT ")) {
+    return loginShellEnvironment().then(
+      (environment) =>
+        new Promise((resolve) => {
+          let output = "";
+          let humanOutput = "";
+          let stdoutBuffer = "";
+          let stderrBuffer = "";
+          let hasFinal = false;
+          const pendingArtifacts: Promise<void>[] = [];
+          let started = false;
+          let child: ChildProcessWithoutNullStreams;
           try {
-            handleProtocol(JSON.parse(line.slice("AIRO_EVENT ".length)) as ProtocolEvent);
-            return;
-          } catch {
-            // Treat a malformed protocol line as ordinary diagnostic output.
+            child = spawn(
+              vscode.workspace.getConfiguration("airo").get<string>("command", "airo"),
+              args,
+              {
+                cwd: folder.uri.fsPath,
+                shell: false,
+                windowsHide: true,
+                stdio: ["pipe", "pipe", "pipe"],
+                env: { ...environment, NO_COLOR: "1", AIRO_STREAM_PROTOCOL: "1" },
+              },
+            );
+            chat.child = child;
+            started = true;
+          } catch (error) {
+            chat.running = false;
+            this.postAllStates();
+            this.notice(`Could not start AIRO: ${String(error)}`, chatId);
+            return resolve({ code: null, output, started });
           }
-        }
-        const text = line + (newline ? "\n" : "");
-        humanOutput += text;
-        if (showOutput) this.postToChat(chatId, { type: "activity", text });
-      };
-      const write = (data: Buffer, stream: "stdout" | "stderr"): void => {
-        const text = data.toString();
-        output += text;
-        const buffered = (stream === "stdout" ? stdoutBuffer : stderrBuffer) + text;
-        const lines = buffered.split("\n");
-        if (stream === "stdout") stdoutBuffer = lines.pop() ?? "";
-        else stderrBuffer = lines.pop() ?? "";
-        for (const line of lines) handleLine(line, true);
-      };
-      child.stdout.on("data", (data: Buffer) => write(data, "stdout"));
-      child.stderr.on("data", (data: Buffer) => write(data, "stderr"));
-      child.on("error", (error) => this.notice(`Could not start AIRO: ${error.message}`, chatId));
-      child.on("close", async (code) => {
-        const stopped = chat.stopping;
-        if (stdoutBuffer) handleLine(stdoutBuffer, false);
-        if (stderrBuffer) handleLine(stderrBuffer, false);
-        chat.child = undefined;
-        chat.running = false;
-        chat.stopping = false;
-        chat.awaitingInput = false;
-        await Promise.allSettled(pendingArtifacts);
-        this.postAllStates();
-        if (!stopped && showOutput && !hasFinal && humanOutput.trim()) {
-          this.postToChat(chatId, {
-            type: code === 0 ? "final" : "failure",
-            text: this.plainText(humanOutput).trim(),
+
+          const handleProtocol = (event: ProtocolEvent): void => {
+            if (event.type === "route" && event.provider && event.model && event.tier) {
+              if (event.sessionId && !chat.session) {
+                chat.session = {
+                  sessionId: event.sessionId,
+                  description: chat.title,
+                  updatedAt: new Date().toISOString(),
+                  turnCount: 0,
+                };
+                chat.activeSession = true;
+                if (chatId === this.activeChatId) {
+                  this.session = chat.session;
+                  this.activeSession = true;
+                }
+              }
+              this.postToChat(chatId, {
+                type: "route",
+                provider: event.provider,
+                model: event.model,
+                tier: event.tier,
+              });
+            } else if ((event.type === "input" || event.type === "permission") && event.question) {
+              chat.awaitingInput = true;
+              this.postToChat(chatId, {
+                type: event.type === "permission" ? "permission" : "interaction",
+                text: event.question,
+              });
+              this.postState(chatId);
+            } else if (event.type === "phase" && event.kind && event.state) {
+              this.postToChat(chatId, {
+                type: "phase",
+                state: event.state,
+                kind: event.kind,
+                title: event.title,
+                provider: event.provider,
+                model: event.model,
+                tier: event.tier,
+                phaseIndex: event.phaseIndex,
+                phaseTotal: event.phaseTotal,
+              });
+            } else if (event.type === "final" && event.text) {
+              hasFinal = true;
+              this.postToChat(chatId, { type: "final", text: event.text });
+            } else if (event.type === "failure" && event.text) {
+              hasFinal = true;
+              this.postToChat(chatId, { type: "failure", text: event.text });
+            } else if (event.type === "artifact" && event.path) {
+              pendingArtifacts.push(this.postArtifact(chatId, event));
+            }
+          };
+          const handleLine = (line: string, newline: boolean): void => {
+            if (line.startsWith("AIRO_EVENT ")) {
+              try {
+                handleProtocol(JSON.parse(line.slice("AIRO_EVENT ".length)) as ProtocolEvent);
+                return;
+              } catch {
+                // Treat a malformed protocol line as ordinary diagnostic output.
+              }
+            }
+            const text = line + (newline ? "\n" : "");
+            humanOutput += text;
+            if (showOutput) this.postToChat(chatId, { type: "activity", text });
+          };
+          const write = (data: Buffer, stream: "stdout" | "stderr"): void => {
+            const text = data.toString();
+            output += text;
+            const buffered = (stream === "stdout" ? stdoutBuffer : stderrBuffer) + text;
+            const lines = buffered.split("\n");
+            if (stream === "stdout") stdoutBuffer = lines.pop() ?? "";
+            else stderrBuffer = lines.pop() ?? "";
+            for (const line of lines) handleLine(line, true);
+          };
+          child.stdout.on("data", (data: Buffer) => write(data, "stdout"));
+          child.stderr.on("data", (data: Buffer) => write(data, "stderr"));
+          child.on("error", (error) =>
+            this.notice(`Could not start AIRO: ${error.message}`, chatId),
+          );
+          child.on("close", async (code) => {
+            const stopped = chat.stopping;
+            if (stdoutBuffer) handleLine(stdoutBuffer, false);
+            if (stderrBuffer) handleLine(stderrBuffer, false);
+            chat.child = undefined;
+            chat.running = false;
+            chat.stopping = false;
+            chat.awaitingInput = false;
+            await Promise.allSettled(pendingArtifacts);
+            this.postAllStates();
+            if (!stopped && showOutput && !hasFinal && humanOutput.trim()) {
+              this.postToChat(chatId, {
+                type: code === 0 ? "final" : "failure",
+                text: this.plainText(humanOutput).trim(),
+              });
+            }
+            if (showOutput) this.postToChat(chatId, { type: "end", code, stopped });
+            resolve({ code, output, started });
           });
-        }
-        if (showOutput) this.postToChat(chatId, { type: "end", code, stopped });
-        resolve({ code, output, started });
-      });
-    });
+        }),
+    );
   }
 
   private configuredRoute(): RouteStatus {
@@ -954,9 +995,10 @@ function listSessionSummaries(): Promise<SessionSummary[]> {
   });
 }
 
-function runCommand(args: string[]): Promise<{ code: number | null; output: string }> {
+async function runCommand(args: string[]): Promise<{ code: number | null; output: string }> {
   const folder = vscode.workspace.workspaceFolders?.[0];
-  if (!folder) return Promise.resolve({ code: null, output: "[]" });
+  if (!folder) return { code: null, output: "[]" };
+  const environment = await loginShellEnvironment();
   return new Promise((resolve) => {
     const child = spawn(
       vscode.workspace.getConfiguration("airo").get<string>("command", "airo"),
@@ -965,7 +1007,7 @@ function runCommand(args: string[]): Promise<{ code: number | null; output: stri
         cwd: folder.uri.fsPath,
         shell: false,
         windowsHide: true,
-        env: { ...process.env, NO_COLOR: "1" },
+        env: { ...environment, NO_COLOR: "1" },
       },
     );
     let output = "";
