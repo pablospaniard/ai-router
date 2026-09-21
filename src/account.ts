@@ -15,19 +15,50 @@ export interface ProviderAccount {
 }
 
 function resolveCommand(command: string): { command?: string; error?: string } {
+  if (process.platform === "win32" || command.includes(path.sep)) {
+    return { command };
+  }
   const shell = process.env.SHELL || "/bin/sh";
-  const result = spawnSync(shell, ["-ilc", 'command -v -- "$1"', "airo", command], {
-    encoding: "utf8",
-    timeout: 5000,
-  });
+  const marker = "__AIRO_COMMAND_BEGIN__";
+  const result = spawnSync(
+    shell,
+    ["-ilc", `printf '${marker}\\n'; command -v -- "$1"`, "airo", command],
+    {
+      encoding: "utf8",
+      timeout: 5000,
+    },
+  );
   if (result.error) return { error: result.error.message };
-  const resolved = (result.stdout || "")
+  const output = result.stdout || "";
+  const markerIndex = output.indexOf(`${marker}\n`);
+  const marked = markerIndex >= 0 ? output.slice(markerIndex + marker.length + 1) : output;
+  const resolved = (marked || output)
     .trim()
     .split(/\r?\n/)
     .map((line: string) => line.trim())
     .filter(Boolean)
     .at(-1);
   return resolved ? { command: resolved } : { error: `${command} not found in PATH` };
+}
+
+function loginShellEnvironment(): NodeJS.ProcessEnv {
+  if (process.platform === "win32") return { ...process.env };
+  const shell = process.env.SHELL || "/bin/sh";
+  const marker = "__AIRO_ENV_BEGIN__";
+  const result = spawnSync(shell, ["-ilc", `printf '${marker}\\0'; env -0`], {
+    encoding: "utf8",
+    timeout: 5000,
+  });
+  if (result.error || result.status !== 0) return { ...process.env };
+  const raw = result.stdout || "";
+  const start = raw.indexOf(`${marker}\0`);
+  if (start < 0) return { ...process.env };
+  const environment: NodeJS.ProcessEnv = { ...process.env };
+  for (const entry of raw.slice(start + marker.length + 1).split("\0")) {
+    const separator = entry.indexOf("=");
+    if (separator > 0) environment[entry.slice(0, separator)] = entry.slice(separator + 1);
+  }
+  return environment;
 }
 
 function runProviderCommand(
@@ -38,12 +69,12 @@ function runProviderCommand(
   | { result?: undefined; command?: string; error: string } {
   const resolved = resolveCommand(command);
   if (!resolved.command) return { error: resolved.error ?? `${command} not found in PATH` };
-  const shell = process.env.SHELL || "/bin/sh";
   return {
     command: resolved.command,
-    result: spawnSync(shell, ["-ilc", 'exec "$1" "$2" "$3"', "airo", resolved.command, ...args], {
+    result: spawnSync(resolved.command, args, {
       encoding: "utf8",
       timeout: 5000,
+      env: loginShellEnvironment(),
     }),
   };
 }
