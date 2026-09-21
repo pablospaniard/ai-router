@@ -90,6 +90,7 @@ type ProtocolEvent = {
   model?: string;
   tier?: string;
   question?: string;
+  reason?: string;
   text?: string;
   requiresApproval?: boolean;
   state?: "started" | "completed" | "failed";
@@ -641,6 +642,9 @@ class SidebarProvider implements vscode.WebviewViewProvider, vscode.Disposable {
                 provider: event.provider,
                 model: event.model,
                 tier: event.tier,
+                // Present only on a mid-run handover, so the transcript can
+                // explain why the provider in the header just changed.
+                reason: event.reason,
               });
             } else if ((event.type === "input" || event.type === "permission") && event.question) {
               chat.awaitingInput = true;

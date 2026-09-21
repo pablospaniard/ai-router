@@ -30,8 +30,11 @@ import {
 import {
   applyRouteOverrides,
   applyRoutePreferences,
+  fallbackProvider,
   orchestrate,
+  providerFailureReason,
   shouldOrchestrate,
+  unavailableProviderError,
 } from "./orchestrator.js";
 import { agentForModel, routeTask, routingClarification } from "./router.js";
 import {
@@ -39,7 +42,7 @@ import {
   commandExists,
   commandVersion,
   isPermissionApproval,
-  isUsageLimitError,
+  isProviderUnavailableError,
   runAgent,
 } from "./runner.js";
 import {
@@ -365,7 +368,9 @@ async function singleRun(
   if (args.dryRun)
     return { exitCode: 0, runId: "dry-run", summaries: [`single:${routed.agent}/${routed.model}`] };
   if (!commandExists(config[routed.agent].command))
-    throw new Error(`${config[routed.agent].command} not available in PATH`);
+    throw routed.agentPinned
+      ? unavailableProviderError(routed, config)
+      : new Error(`${config[routed.agent].command} not available in PATH`);
   const started = Date.now();
   const basePrompt = singleRunPrompt(args.task, session);
   let effectivePrompt = basePrompt;
@@ -375,27 +380,27 @@ async function singleRun(
     logger,
     logMeta,
   });
-  if (isUsageLimitError(result.output, result.exitCode)) {
-    const fallbackAgent = routed.agent === "claude" ? "codex" : "claude";
-    if (commandExists(config[fallbackAgent].command)) {
-      const profile = config[fallbackAgent].models[routed.modelTier];
-      logger.status(
-        `${routed.agent} usage limit detected → falling back to ${fallbackAgent}/${profile.model}`,
-      );
-      routed = {
-        ...routed,
-        agent: fallbackAgent,
-        model: profile.model,
-        effort: profile.effort ?? routed.effort,
-      };
+  // A question means the provider wants input, not that it cannot serve the run.
+  if (!result.question && isProviderUnavailableError(result.output, result.exitCode)) {
+    const failure = providerFailureReason(result.output, result.exitCode);
+    const fallback = fallbackProvider(routed, config, failure);
+    if (fallback) {
+      const message = `${routed.agent} ${failure} failure detected → falling back to ${fallback.agent}/${fallback.model}`;
+      routed = fallback;
       Object.assign(logMeta, { agent: routed.agent, model: routed.model, effort: routed.effort });
+      logger.providerSwitch(logMeta, message);
       result = await runAgent(routed, effectivePrompt, config, {
         headless: true,
         capture: true,
         logger,
         logMeta,
       });
-    }
+    } else
+      logger.status(
+        routed.agentPinned
+          ? `${routed.agent} ${failure} failure detected → keeping the explicitly selected provider (no fallback)`
+          : `${routed.agent} ${failure} failure detected → no other provider is available to take over`,
+      );
   }
   let usage = result.usage;
   let clarificationCount = 0;

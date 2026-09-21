@@ -16,6 +16,8 @@ import {
   geminiProgress,
   isApprovalAnswer,
   isPermissionApproval,
+  isProviderAuthError,
+  isProviderUnavailableError,
   isUsageLimitError,
   permissionFailureQuestion,
   progressFor,
@@ -26,6 +28,20 @@ test("detects provider session and quota limit failures", () => {
   assert.equal(isUsageLimitError("You've hit your session limit."), true);
   assert.equal(isUsageLimitError("rate_limit_error: too many requests"), true);
   assert.equal(isUsageLimitError("Authentication failed"), false);
+});
+
+test("detects provider sign-in failures that need another provider", () => {
+  const codex401 =
+    "Reconnecting... 5/5 (unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses)\nturn failed: unexpected status 401 Unauthorized: Missing bearer or basic authentication in header";
+
+  assert.equal(isProviderAuthError(codex401, 1), true);
+  assert.equal(isProviderUnavailableError(codex401, 1), true);
+  assert.equal(isProviderAuthError("Please run `codex login` first", 1), true);
+  assert.equal(isProviderAuthError("You are not logged in", 2), true);
+  // A 401 the agent ran into while working on the task is not a provider failure.
+  assert.equal(isProviderAuthError(`curl returned 401 Unauthorized for the staging API`, 0), false);
+  assert.equal(isProviderAuthError("Review completed.", 1), false);
+  assert.equal(isProviderUnavailableError("You've hit your session limit.", 1), true);
 });
 
 test("extracts explicit and permission-blocked clarification questions", () => {

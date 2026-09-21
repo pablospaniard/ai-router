@@ -96,6 +96,16 @@ function readTomlModel(file: string): string | undefined {
   }
 }
 
+/**
+ * `Not logged in` contains `logged in`, so a plain match reports an
+ * unauthenticated provider as ready. Check the negation first.
+ */
+function isNegatedSignIn(output: string): boolean {
+  return /\b(?:not|never|isn'?t|aren'?t)\s+(?:currently\s+)?(?:logged\s*in|signed\s*in|authenticated)\b|\bno\s+(?:active\s+)?(?:account|credentials|session)\b/i.test(
+    output,
+  );
+}
+
 function claudeSettingsModel(cwd: string): string | undefined {
   const files = [
     path.join(os.homedir(), ".claude", "settings.json"),
@@ -152,7 +162,7 @@ function inspectClaude(command: string, defaultModel?: string): ProviderAccount 
   })();
   const authenticated = parsed
     ? Boolean(parsed.loggedIn)
-    : result.status === 0 && /logged\s*in|authenticated/i.test(output);
+    : result.status === 0 && !isNegatedSignIn(output) && /logged\s*in|authenticated/i.test(output);
   const identity = parsed?.emailAddress ?? parsed?.email ?? parsed?.account?.email;
   const authMethod = parsed?.authMethod ?? parsed?.subscriptionType;
   return {
@@ -186,7 +196,8 @@ function inspectCodex(command: string, defaultModel?: string): ProviderAccount {
       defaultModel,
     };
   const output = (result.stdout || result.stderr || "").trim();
-  const authenticated = result.status === 0 && /logged in/i.test(output);
+  const authenticated =
+    result.status === 0 && !isNegatedSignIn(output) && /logged in/i.test(output);
   const method = output.match(/logged in using\s+(.+)/i)?.[1]?.trim();
   return {
     agent: "codex",
@@ -198,10 +209,21 @@ function inspectCodex(command: string, defaultModel?: string): ProviderAccount {
   };
 }
 
-export function inspectAccounts(config: RouterConfig, cwd = process.cwd()): ProviderAccount[] {
+/**
+ * Inspect one provider account. Returns undefined for providers without a
+ * sign-in probe, so callers can treat them as "unknown" rather than broken.
+ */
+export function inspectAccount(
+  agent: Agent,
+  config: RouterConfig,
+  cwd = process.cwd(),
+): ProviderAccount | undefined {
   const defaults = detectDefaultModels(config, cwd);
-  return [
-    inspectClaude(config.claude.command, defaults.claude),
-    inspectCodex(config.codex.command, defaults.codex),
-  ];
+  if (agent === "claude") return inspectClaude(config.claude.command, defaults.claude);
+  if (agent === "codex") return inspectCodex(config.codex.command, defaults.codex);
+  return undefined;
+}
+
+export function inspectAccounts(config: RouterConfig, cwd = process.cwd()): ProviderAccount[] {
+  return [inspectAccount("claude", config, cwd)!, inspectAccount("codex", config, cwd)!];
 }

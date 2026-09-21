@@ -194,6 +194,114 @@ console.log(JSON.stringify({type:"turn.completed",usage:{input_tokens:5,cached_i
   }
 });
 
+test("hands the run to the signed-in provider when the routed one is not authenticated", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-orchestrate-auth-"));
+  // Codex is installed but signed out, exactly as a 401 run reports it.
+  const codex = executable(
+    path.join(dir, "codex"),
+    `if (process.argv.includes("login")) { console.log("Not logged in"); process.exit(0); }
+console.log(JSON.stringify({type:"turn.failed",error:{message:"unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses"}}));
+process.exit(1);`,
+  );
+  const claude = executable(
+    path.join(dir, "claude"),
+    `if (process.argv.includes("auth")) { console.log(JSON.stringify({loggedIn:true})); process.exit(0); }
+console.log(JSON.stringify({type:"result", subtype:"success", result:"Renamed the type."}));`,
+  );
+  try {
+    const config = testConfig(claude, codex);
+    config.orchestration.maxPhases = 1;
+    const result = await orchestrate("Rename a type in one file", config);
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.phases.length, 1);
+    assert.equal(result.phases[0].route.agent, "claude");
+    assert.equal(result.phases[0].output, "Renamed the type.");
+    assert.ok(
+      result.phases[0].route.modelReasons.some((reason: string) =>
+        /provider authentication → fallback claude/.test(reason),
+      ),
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("does not fall back to a second provider that is also signed out", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-orchestrate-both-signed-out-"));
+  const codex = executable(
+    path.join(dir, "codex"),
+    `if (process.argv.includes("login")) { console.log("Not logged in"); process.exit(0); }
+console.log(JSON.stringify({type:"turn.failed",error:{message:"unexpected status 401 Unauthorized: Missing bearer"}}));
+process.exit(1);`,
+  );
+  const claudeLog = path.join(dir, "claude-runs");
+  const claude = executable(
+    path.join(dir, "claude"),
+    `const fs = require("node:fs");
+if (process.argv.includes("auth")) { console.log(JSON.stringify({loggedIn:false})); process.exit(0); }
+fs.appendFileSync(${JSON.stringify(claudeLog)}, "run\\n");
+console.log(JSON.stringify({type:"result", subtype:"success", result:"done"}));`,
+  );
+  try {
+    const config = testConfig(claude, codex);
+    config.orchestration.maxPhases = 1;
+    config.orchestration.recoverOnFailure = false;
+    config.orchestration.stopOnFailure = true;
+    const result = await orchestrate("Rename a type in one file", config);
+
+    assert.equal(result.exitCode, 1);
+    assert.equal(fs.existsSync(claudeLog), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("fails instead of substituting a provider when the pinned one is missing", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-orchestrate-pinned-missing-"));
+  const codex = executable(
+    path.join(dir, "codex"),
+    `console.log(JSON.stringify({type:"item.completed",item:{type:"agent_message",text:"done"}}));`,
+  );
+  try {
+    const config = testConfig("definitely-missing-claude", codex);
+    await assert.rejects(
+      orchestrate("Rename a type in one file", config, {
+        routeOverrides: { agent: "claude" },
+      }),
+      /claude was explicitly selected but definitely-missing-claude is not available/,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("keeps a pinned provider when it reports a usage limit", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-orchestrate-pinned-limit-"));
+  const codexLog = path.join(dir, "codex-invoked");
+  const claude = executable(
+    path.join(dir, "claude"),
+    `console.log(JSON.stringify({type:"result", subtype:"success", result:"Claude usage limit reached."}));`,
+  );
+  const codex = executable(
+    path.join(dir, "codex"),
+    `require("node:fs").writeFileSync(${JSON.stringify(codexLog)}, "yes");
+console.log(JSON.stringify({type:"item.completed",item:{type:"agent_message",text:"done"}}));`,
+  );
+  try {
+    const config = testConfig(claude, codex);
+    config.orchestration.maxPhases = 1;
+    config.orchestration.recoverOnFailure = false;
+    const result = await orchestrate("Rename a type in one file", config, {
+      routeOverrides: { agent: "claude" },
+    });
+    assert.ok(result.phases.every((phase) => phase.route.agent === "claude"));
+    assert.equal(fs.existsSync(codexLog), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("stops after a failed phase when recovery is disabled", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-orchestrate-stop-"));
   const codex = executable(path.join(dir, "codex"), `process.exit(2);`);

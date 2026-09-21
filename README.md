@@ -82,7 +82,7 @@ The repository includes a VS Code extension in [`vscode-extension`](vscode-exten
 
 The extension invokes the AIRO CLI, so `airo-cli` must be installed (or the repository must be linked locally) in addition to any provider CLI. Provider CLIs do not need to be installed in a standard location, but every executable must be reachable either through `PATH` or an explicit command path. If VS Code cannot find `airo`, set **AIRO: Command** to the absolute path of the AIRO executable, such as `/Users/me/.local/bin/airo` or `/opt/homebrew/bin/airo`. The same setting is used by the sidebar and the **AIRO: Open Terminal** command.
 
-AIRO can fall back to the available provider during adaptive runs when one CLI is missing. Run `airo setup` at any time to revisit the model choices.
+When AIRO picks the provider itself, it can fall back to the other provider if one CLI is missing, signed out (for example Codex reporting `401 Unauthorized`), or usage-limited; it only falls back to a provider that is actually signed in, and it stops retrying a provider that already failed that way during the run. A handover is announced the moment it happens: the CLI prints the new provider, and the VS Code sidebar repaints its header chip, phase chip, and activity accent and adds a short note explaining the change. An explicit choice is never substituted: if you pin a provider with `--agent`, `--model`, `/agent`, the VS Code provider setting, or by naming it in the prompt, AIRO uses that provider only and fails with a clear error instead of switching. Run `airo setup` at any time to revisit the model choices.
 
 ## Common workflows
 

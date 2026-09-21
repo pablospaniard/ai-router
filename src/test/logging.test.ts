@@ -99,6 +99,42 @@ test("persists and renders every run-log event category", () => {
   }
 });
 
+test("re-announces the route so clients repaint after a provider handover", () => {
+  const previousStreamProtocol = process.env.AIRO_STREAM_PROTOCOL;
+  const originalWrite = process.stdout.write;
+  let terminal = "";
+  process.env.AIRO_STREAM_PROTOCOL = "1";
+  process.stdout.write = ((chunk: any) => {
+    terminal += String(chunk);
+    return true;
+  }) as typeof process.stdout.write;
+  try {
+    const logger = new RunLogger({ runId: "switch", level: "verbose", persist: false });
+    logger.providerSwitch(
+      { ...meta, agent: "claude", model: "haiku" },
+      "codex authentication failure detected → falling back to claude/haiku",
+    );
+
+    const events = terminal
+      .split("\n")
+      .filter((line) => line.startsWith("AIRO_EVENT "))
+      .map((line) => JSON.parse(line.slice("AIRO_EVENT ".length)) as Record<string, unknown>);
+    assert.deepEqual(
+      events.map((event) => event.type),
+      ["route", "phase"],
+    );
+    assert.ok(events.every((event) => event.provider === "claude"));
+    assert.equal(events[0].model, "haiku");
+    assert.equal(events[1].state, "started");
+    assert.match(terminal, /falling back to claude\/haiku/);
+    assert.match(terminal, /now running/);
+  } finally {
+    process.stdout.write = originalWrite;
+    if (previousStreamProtocol === undefined) delete process.env.AIRO_STREAM_PROTOCOL;
+    else process.env.AIRO_STREAM_PROTOCOL = previousStreamProtocol;
+  }
+});
+
 test("follows a log until interrupted and rejects missing files", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-follow-"));
   const file = path.join(dir, "combined.log");

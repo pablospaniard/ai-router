@@ -137,6 +137,8 @@ export interface RouteResult {
   userRequestedAgent?: Agent;
   userRequestedTier?: ModelTier;
   userRequestedModel?: string;
+  /** The user picked this provider explicitly, so AIRO must never swap it for another one. */
+  agentPinned?: boolean;
   model: string;
   effort: Effort;
   complexity: number;
