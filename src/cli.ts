@@ -16,6 +16,7 @@ import fs from "node:fs";
 import { loadConfig, writeProjectConfig } from "./config.js";
 import { runSetup } from "./setup.js";
 import { printModels } from "./models.js";
+import { catalogAge, discoverCatalog } from "./catalog.js";
 import {
   appendHistory,
   explainLearning,
@@ -642,7 +643,7 @@ async function chatLoop(config: any, path?: string) {
         continue;
       }
       if (action.kind === "models") {
-        printModels();
+        await printModels();
         continue;
       }
       if (action.kind === "account") {
@@ -836,7 +837,7 @@ async function main() {
     return;
   }
   if (raw[0] === "models") {
-    printModels();
+    await printModels();
     return;
   }
 
@@ -873,6 +874,15 @@ async function main() {
       const exists = commandExists(command);
       console.log(
         `${exists ? statusIcon("ok") : statusIcon("error")} ${agentColor(agent, agent.padEnd(6))} ${ui.cyan(command)} ${exists ? ui.gray(`→ ${commandVersion(command)}`) : ui.red("→ not found in PATH")}`,
+      );
+      if (!exists) continue;
+      const catalog = await discoverCatalog(agent, config, { refresh: true, online: true });
+      console.log(
+        `         ${ui.gray("models")} ${
+          catalog.source === "builtin"
+            ? ui.yellow(`not detected${catalog.note ? ` · ${catalog.note}` : ""}`)
+            : `${ui.cyan(String(catalog.models.length))} ${ui.gray(`via ${catalog.via ?? catalog.source} · ${catalogAge(catalog)}`)}`
+        }`,
       );
     }
     return;

@@ -1,15 +1,25 @@
+import { AGENTS, catalogAge, discoverCatalog } from "./catalog.js";
 import { loadConfig } from "./config.js";
 import { agentColor, divider, statusIcon, ui } from "./ui.js";
 
-export function printModels() {
+export async function printModels() {
   const { config, path } = loadConfig();
   console.log("");
   console.log(divider("Active model configuration"));
   console.log(`${ui.gray("config")} ${path ? ui.cyan(path) : ui.yellow("built-in defaults")}`);
-  for (const agent of ["claude", "codex", "gemini", "copilot"] as const) {
+  for (const agent of AGENTS) {
+    const catalog = await discoverCatalog(agent, config);
     console.log("");
     console.log(`${statusIcon("info")} ${ui.bold(agentColor(agent, agent.toUpperCase()))}`);
     console.log(`  ${ui.gray("access ")} ${ui.bold("all provider models")}`);
+    console.log(
+      `  ${ui.gray("detected")} ${
+        catalog.source === "builtin"
+          ? ui.yellow(`none · using configured ids${catalog.note ? ` (${catalog.note})` : ""}`)
+          : ui.cyan(`${catalog.models.length} via ${catalog.via ?? catalog.source}`) +
+            ui.gray(` · ${catalogAge(catalog)}`)
+      }`,
+    );
     for (const tier of ["fast", "balanced", "deep"] as const) {
       const p = config[agent].models[tier];
       const label =
@@ -18,8 +28,11 @@ export function printModels() {
           : tier === "balanced"
             ? ui.yellow(tier.padEnd(18))
             : ui.red(tier.padEnd(18));
+      const known = catalog.source === "builtin" || catalog.models.some((m) => m.id === p.model);
       console.log(
-        `  ${label} ${ui.cyan(p.model)} ${ui.gray("effort=")}${ui.magenta(p.effort ?? "auto")}`,
+        `  ${label} ${ui.cyan(p.model)} ${ui.gray("effort=")}${ui.magenta(p.effort ?? "auto")}${
+          known ? "" : ` ${ui.yellow("not in detected list")}`
+        }`,
       );
     }
   }
