@@ -43,18 +43,45 @@ const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const node_os_1 = __importDefault(require("node:os"));
 const webview_1 = require("./webview");
+let loginShellEnvironmentPromise;
 function loginShellEnvironment() {
-    const shell = process.env.SHELL || "/bin/sh";
-    const result = (0, node_child_process_1.spawnSync)(shell, ["-ilc", "env"], { encoding: "utf8", timeout: 5000 });
-    const environment = { ...process.env };
-    if (result.error || result.status !== 0)
-        return environment;
-    for (const line of (result.stdout || "").split(/\r?\n/)) {
-        const separator = line.indexOf("=");
-        if (separator > 0)
-            environment[line.slice(0, separator)] = line.slice(separator + 1);
-    }
-    return environment;
+    if (loginShellEnvironmentPromise)
+        return loginShellEnvironmentPromise;
+    loginShellEnvironmentPromise = new Promise((resolve) => {
+        if (process.platform === "win32")
+            return resolve({ ...process.env });
+        const shell = process.env.SHELL || "/bin/sh";
+        const marker = "__AIRO_ENV_BEGIN__";
+        let child;
+        try {
+            child = (0, node_child_process_1.spawn)(shell, ["-ilc", `printf '${marker}\\0'; env -0`], {
+                stdio: ["ignore", "pipe", "ignore"],
+                windowsHide: true,
+            });
+        }
+        catch {
+            return resolve({ ...process.env });
+        }
+        let output = "";
+        const fallback = () => ({ ...process.env });
+        child.stdout?.on("data", (data) => (output += data.toString()));
+        child.on("error", () => resolve(fallback()));
+        child.on("close", (code) => {
+            if (code !== 0)
+                return resolve(fallback());
+            const start = output.indexOf(`${marker}\0`);
+            if (start < 0)
+                return resolve(fallback());
+            const environment = fallback();
+            for (const entry of output.slice(start + marker.length + 1).split("\0")) {
+                const separator = entry.indexOf("=");
+                if (separator > 0)
+                    environment[entry.slice(0, separator)] = entry.slice(separator + 1);
+            }
+            resolve(environment);
+        });
+    });
+    return loginShellEnvironmentPromise;
 }
 function activate(context) {
     const provider = new SidebarProvider();
@@ -521,7 +548,7 @@ class SidebarProvider {
         chat.stopping = false;
         chat.awaitingInput = false;
         this.postAllStates();
-        return new Promise((resolve) => {
+        return loginShellEnvironment().then((environment) => new Promise((resolve) => {
             let output = "";
             let humanOutput = "";
             let stdoutBuffer = "";
@@ -536,7 +563,7 @@ class SidebarProvider {
                     shell: false,
                     windowsHide: true,
                     stdio: ["pipe", "pipe", "pipe"],
-                    env: { ...loginShellEnvironment(), NO_COLOR: "1", AIRO_STREAM_PROTOCOL: "1" },
+                    env: { ...environment, NO_COLOR: "1", AIRO_STREAM_PROTOCOL: "1" },
                 });
                 chat.child = child;
                 started = true;
@@ -567,6 +594,9 @@ class SidebarProvider {
                         provider: event.provider,
                         model: event.model,
                         tier: event.tier,
+                        // Present only on a mid-run handover, so the transcript can
+                        // explain why the provider in the header just changed.
+                        reason: event.reason,
                     });
                 }
                 else if ((event.type === "input" || event.type === "permission") && event.question) {
@@ -654,7 +684,7 @@ class SidebarProvider {
                     this.postToChat(chatId, { type: "end", code, stopped });
                 resolve({ code, output, started });
             });
-        });
+        }));
     }
     configuredRoute() {
         const config = vscode.workspace.getConfiguration("airo");
@@ -909,16 +939,17 @@ function listSessionSummaries() {
         }
     });
 }
-function runCommand(args) {
+async function runCommand(args) {
     const folder = vscode.workspace.workspaceFolders?.[0];
     if (!folder)
-        return Promise.resolve({ code: null, output: "[]" });
+        return { code: null, output: "[]" };
+    const environment = await loginShellEnvironment();
     return new Promise((resolve) => {
         const child = (0, node_child_process_1.spawn)(vscode.workspace.getConfiguration("airo").get("command", "airo"), args, {
             cwd: folder.uri.fsPath,
             shell: false,
             windowsHide: true,
-            env: { ...loginShellEnvironment(), NO_COLOR: "1" },
+            env: { ...environment, NO_COLOR: "1" },
         });
         let output = "";
         child.stdout.on("data", (data) => (output += data.toString()));

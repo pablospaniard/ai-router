@@ -15,6 +15,25 @@ export function isUsageLimitError(text: string, exitCode?: number): boolean {
   );
 }
 
+/**
+ * Provider sign-in failures. A provider CLI can be installed and still be
+ * unusable because its account is missing or expired: Codex reports that as
+ * repeated `401 Unauthorized` reconnect attempts and a failed turn. Requires a
+ * non-zero exit so a 401 the agent merely encountered while working on the
+ * task is not mistaken for the provider's own credentials.
+ */
+export function isProviderAuthError(text: string, exitCode?: number): boolean {
+  if (!text || exitCode === 0) return false;
+  return /(?:40[13]\s+(?:unauthorized|forbidden)|unauthorized|missing bearer|invalid[ _-]?api[ _-]?key|authentication (?:failed|required|error)|(?:auth|access|oauth|refresh|session) token (?:is )?(?:missing|invalid|expired)|credentials? (?:are |is )?(?:missing|invalid|expired|not found)|not (?:signed|logged) in|please (?:sign|log) in|run\s+`?(?:\/?login|\w+ login)`?)/i.test(
+    text,
+  );
+}
+
+/** Failures that mean this provider cannot serve the run, so another one should take over. */
+export function isProviderUnavailableError(text: string, exitCode?: number): boolean {
+  return isUsageLimitError(text, exitCode) || isProviderAuthError(text, exitCode);
+}
+
 export function commandVersion(command: string): string {
   const result = spawnSync(command, ["--version"], { encoding: "utf8", timeout: 5000 });
   if (result.error) return `ERROR: ${result.error.message}`;

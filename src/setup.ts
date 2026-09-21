@@ -1,8 +1,9 @@
 import readline from "node:readline";
-import { DEFAULT_CONFIG, loadConfig, writeGlobalConfig } from "./config.js";
+import { loadConfig, writeGlobalConfig } from "./config.js";
 import type { Agent, Effort, ModelProfile, ModelTier, RouterConfig } from "./types.js";
 import { agentColor, divider, promptLabel, statusIcon, ui } from "./ui.js";
 import { detectDefaultModels } from "./account.js";
+import { AGENTS, discoverCatalogs } from "./catalog.js";
 
 function ask(rl: any, question: string): Promise<string> {
   return new Promise((resolve) => rl.question(`${promptLabel()}${question} `, resolve));
@@ -108,13 +109,21 @@ export async function runSetup(): Promise<string> {
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const candidatesFor = (agent: Agent) => [
-      ...new Set([
-        ...Object.values(DEFAULT_CONFIG[agent].models).map((profile) => profile.model),
-        ...Object.values(config[agent].models).map((profile) => profile.model),
-        ...(config[agent].allowedModels ?? []),
-      ]),
-    ];
+    console.log(ui.dim("Detecting the models each provider can run…"));
+    const catalogs = await discoverCatalogs(config, { refresh: true, online: true });
+    for (const agent of AGENTS) {
+      const catalog = catalogs[agent];
+      console.log(
+        `  ${agentColor(agent, agent.padEnd(6))} ${
+          catalog.source === "builtin"
+            ? ui.yellow(
+                `not detected${catalog.note ? ` · ${catalog.note}` : ""}; using configured ids`,
+              )
+            : ui.gray(`${catalog.models.length} via ${catalog.via ?? catalog.source}`)
+        }`,
+      );
+    }
+    const candidatesFor = (agent: Agent) => catalogs[agent].models.map((model) => model.id);
     const claudeCandidates = candidatesFor("claude");
     const codexCandidates = candidatesFor("codex");
     const geminiCandidates = candidatesFor("gemini");

@@ -168,9 +168,12 @@ export class RunLogger {
     }
   }
 
-  phaseStart(meta: PhaseLogMeta) {
-    const message = `phase ${meta.phaseIndex}/${meta.phaseTotal}: ${meta.phaseKind} → ${meta.agent}/${meta.model} effort=${meta.effort} tier=${meta.tier}`;
-    this.append(this.combinedPath, `${nowTime()} [airo] ${message}`);
+  /**
+   * Route and phase events describing who is running the phase right now.
+   * `reason` is set only for a handover, so clients can say why the provider
+   * changed instead of silently swapping the name in the header.
+   */
+  private routeEvents(meta: PhaseLogMeta, reason?: string) {
     this.event("route", {
       provider: meta.agent,
       model: meta.model,
@@ -179,6 +182,7 @@ export class RunLogger {
       phase: meta.phaseKind,
       phaseIndex: meta.phaseIndex,
       phaseTotal: meta.phaseTotal,
+      ...(reason ? { reason } : {}),
     });
     this.event("phase", {
       state: "started",
@@ -190,6 +194,28 @@ export class RunLogger {
       phaseIndex: meta.phaseIndex,
       phaseTotal: meta.phaseTotal,
     });
+  }
+
+  /**
+   * Report a provider handover inside a running phase. Clients render the
+   * active provider from route events, so they need a fresh one immediately:
+   * otherwise the sidebar keeps showing the provider that just dropped out.
+   * Call this after `meta` has been updated to the new provider.
+   */
+  providerSwitch(meta: PhaseLogMeta, message: string) {
+    this.status(message);
+    this.routeEvents(meta, message);
+    this.console(
+      `${ui.gray(nowTime())} ${statusIcon("work")} ${ui.bold("airo")} ${ui.gray("now running")} ${agentColor(meta.agent, `${meta.agent}/${meta.model}`)} ${ui.gray(`effort=${meta.effort} · tier=${meta.tier}`)}`,
+    );
+    this.metadata(`phase-log=${this.phaseFile(meta)}`);
+    this.metadata(`events=${this.eventsFile(meta)}`);
+  }
+
+  phaseStart(meta: PhaseLogMeta) {
+    const message = `phase ${meta.phaseIndex}/${meta.phaseTotal}: ${meta.phaseKind} → ${meta.agent}/${meta.model} effort=${meta.effort} tier=${meta.tier}`;
+    this.append(this.combinedPath, `${nowTime()} [airo] ${message}`);
+    this.routeEvents(meta);
     this.console("");
     this.console(
       sectionRule(

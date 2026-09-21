@@ -79,6 +79,29 @@ test("detects layered provider defaults and authenticated accounts", () => {
   }
 });
 
+test("does not read a negated sign-in message as an authenticated account", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-account-negated-"));
+  const claude = path.join(dir, "claude");
+  const codex = path.join(dir, "codex");
+  fs.writeFileSync(claude, "#!/bin/sh\nprintf 'You are not logged in'\n");
+  fs.writeFileSync(codex, "#!/bin/sh\nprintf 'Not logged in'\n");
+  fs.chmodSync(claude, 0o755);
+  fs.chmodSync(codex, 0o755);
+  try {
+    const config = structuredClone(DEFAULT_CONFIG);
+    config.claude.command = claude;
+    config.codex.command = codex;
+    const accounts = inspectAccounts(config, dir);
+    assert.deepEqual(
+      accounts.map((account) => account.authenticated),
+      [false, false],
+    );
+    assert.equal(accounts[1].status, "Not logged in");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("reports unavailable and unauthenticated providers", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "airo-account-status-"));
   const claude = path.join(dir, "claude");

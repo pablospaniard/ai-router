@@ -102,6 +102,32 @@ test("understands human-style provider, model, and tier overrides", () => {
   assert.equal(codex.model, current.codex.models.deep.model);
 });
 
+test("pins the provider only when the user chose it", () => {
+  const current = config();
+
+  assert.equal(routeTask("go with Gemini on the fast tier for this", current).agentPinned, true);
+  assert.equal(routeTask("use gpt-6-astra and tell me the time", current).agentPinned, true);
+  assert.equal(routeTask("review this pull request", current).agentPinned, false);
+  assert.equal(
+    applyRouteOverrides(routeTask("review this pull request", current), { agent: "codex" }, current)
+      .agentPinned,
+    true,
+  );
+  assert.equal(
+    applyRoutePreferences(
+      routeTask("review this pull request", current),
+      { agent: "codex" },
+      current,
+    ).agentPinned,
+    true,
+  );
+  assert.equal(
+    applyRouteOverrides(routeTask("review this pull request", current), { tier: "fast" }, current)
+      .agentPinned,
+    false,
+  );
+});
+
 test("lets an on-demand model request override persistent routing preferences", () => {
   const current = config();
   const route = applyRoutePreferences(

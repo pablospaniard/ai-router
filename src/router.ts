@@ -393,6 +393,7 @@ export function routeTask(task: string, config: RouterConfig): RouteResult {
     userRequestedAgent: naturalRequest.agent,
     userRequestedTier,
     userRequestedModel: explicitModel?.model,
+    agentPinned: Boolean(explicitModel ?? naturalRequest.agent),
     model: explicitModel?.model ?? profile.model,
     effort,
     complexity,

@@ -16,6 +16,7 @@ import fs from "node:fs";
 import { loadConfig, writeProjectConfig } from "./config.js";
 import { runSetup } from "./setup.js";
 import { printModels } from "./models.js";
+import { catalogAge, discoverCatalog } from "./catalog.js";
 import {
   appendHistory,
   explainLearning,
@@ -30,7 +31,10 @@ import {
 import {
   applyRouteOverrides,
   applyRoutePreferences,
+  fallbackIfMissing,
+  fallbackProvider,
   orchestrate,
+  providerFailureReason,
   shouldOrchestrate,
 } from "./orchestrator.js";
 import { agentForModel, routeTask, routingClarification } from "./router.js";
@@ -39,7 +43,7 @@ import {
   commandExists,
   commandVersion,
   isPermissionApproval,
-  isUsageLimitError,
+  isProviderUnavailableError,
   runAgent,
 } from "./runner.js";
 import {
@@ -364,8 +368,15 @@ async function singleRun(
   }
   if (args.dryRun)
     return { exitCode: 0, runId: "dry-run", summaries: [`single:${routed.agent}/${routed.model}`] };
-  if (!commandExists(config[routed.agent].command))
-    throw new Error(`${config[routed.agent].command} not available in PATH`);
+  if (!commandExists(config[routed.agent].command)) {
+    const unavailable = routed;
+    routed = fallbackIfMissing(routed, config);
+    Object.assign(logMeta, { agent: routed.agent, model: routed.model, effort: routed.effort });
+    logger.providerSwitch(
+      logMeta,
+      `${unavailable.agent} is not available in PATH → falling back to ${routed.agent}/${routed.model}`,
+    );
+  }
   const started = Date.now();
   const basePrompt = singleRunPrompt(args.task, session);
   let effectivePrompt = basePrompt;
@@ -375,27 +386,27 @@ async function singleRun(
     logger,
     logMeta,
   });
-  if (isUsageLimitError(result.output, result.exitCode)) {
-    const fallbackAgent = routed.agent === "claude" ? "codex" : "claude";
-    if (commandExists(config[fallbackAgent].command)) {
-      const profile = config[fallbackAgent].models[routed.modelTier];
-      logger.status(
-        `${routed.agent} usage limit detected → falling back to ${fallbackAgent}/${profile.model}`,
-      );
-      routed = {
-        ...routed,
-        agent: fallbackAgent,
-        model: profile.model,
-        effort: profile.effort ?? routed.effort,
-      };
+  // A question means the provider wants input, not that it cannot serve the run.
+  if (!result.question && isProviderUnavailableError(result.output, result.exitCode)) {
+    const failure = providerFailureReason(result.output, result.exitCode);
+    const fallback = fallbackProvider(routed, config, failure);
+    if (fallback) {
+      const message = `${routed.agent} ${failure} failure detected → falling back to ${fallback.agent}/${fallback.model}`;
+      routed = fallback;
       Object.assign(logMeta, { agent: routed.agent, model: routed.model, effort: routed.effort });
+      logger.providerSwitch(logMeta, message);
       result = await runAgent(routed, effectivePrompt, config, {
         headless: true,
         capture: true,
         logger,
         logMeta,
       });
-    }
+    } else
+      logger.status(
+        routed.agentPinned
+          ? `${routed.agent} ${failure} failure detected → keeping the explicitly selected provider (no fallback)`
+          : `${routed.agent} ${failure} failure detected → no other provider is available to take over`,
+      );
   }
   let usage = result.usage;
   let clarificationCount = 0;
@@ -637,7 +648,7 @@ async function chatLoop(config: any, path?: string) {
         continue;
       }
       if (action.kind === "models") {
-        printModels();
+        await printModels();
         continue;
       }
       if (action.kind === "account") {
@@ -831,7 +842,7 @@ async function main() {
     return;
   }
   if (raw[0] === "models") {
-    printModels();
+    await printModels();
     return;
   }
 
@@ -868,6 +879,15 @@ async function main() {
       const exists = commandExists(command);
       console.log(
         `${exists ? statusIcon("ok") : statusIcon("error")} ${agentColor(agent, agent.padEnd(6))} ${ui.cyan(command)} ${exists ? ui.gray(`→ ${commandVersion(command)}`) : ui.red("→ not found in PATH")}`,
+      );
+      if (!exists) continue;
+      const catalog = await discoverCatalog(agent, config, { refresh: true, online: true });
+      console.log(
+        `         ${ui.gray("models")} ${
+          catalog.source === "builtin"
+            ? ui.yellow(`not detected${catalog.note ? ` · ${catalog.note}` : ""}`)
+            : `${ui.cyan(String(catalog.models.length))} ${ui.gray(`via ${catalog.via ?? catalog.source} · ${catalogAge(catalog)}`)}`
+        }`,
       );
     }
     return;
